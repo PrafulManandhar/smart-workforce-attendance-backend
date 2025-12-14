@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+model Company {
+  id              String   @id @default(cuid())
+  name            String
+  code            String   @unique          // short code e.g. "ACME"
+  timezone        String   @default("Australia/Sydney")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Future config fields
+  annualLeaveRatio Float?  // hours accrued per worked hour
+  sickLeaveRatio   Float?
+
+  users           User[]
+  employees       EmployeeProfile[]
+}
+
+model User {
+  id              String    @id @default(cuid())
+  email           String    @unique
+  passwordHash    String
+  role            Role
+  isActive        Boolean   @default(true)
+
+  companyId       String?   // null for SUPER_ADMIN
+  company         Company?  @relation(fields: [companyId], references: [id])
+
+  employeeProfile EmployeeProfile?
+
+  // refresh token support
+  hashedRefreshToken String?
+  resetPasswordToken   String?
+  resetPasswordExpiry DateTime?
+
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model EmployeeProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id])
+
+  companyId       String
+  company         Company  @relation(fields: [companyId], references: [id])
+
+  firstName       String
+  lastName        String
+  position        String?      // e.g. Developer, Cleaner, Kitchen Staff
+
+  // For future attendance features
+  hasWFHPermission  Boolean @default(false)
+  homeLatitude      Float?
+  homeLongitude     Float?
+  isSummaryRequired Boolean @default(false) // end-of-shift summary requirement
+
+  managerId       String?      // who approves leave, etc (User id)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
