@@ -19,7 +19,8 @@ export class CompaniesController {
   }
 
   @Post()
-  @Roles(AppRole.SUPER_ADMIN)
+  // @Roles(AppRole.SUPER_ADMIN)
+  @Roles(AppRole.SUPER_ADMIN, AppRole.COMPANY_ADMIN)
   create(
     @Body()
     body: { name: string; code: string; timezone?: string },

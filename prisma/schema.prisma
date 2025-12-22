@@ -7,6 +7,13 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum CompanyStatus {
+  DRAFT
+  ACTIVE_TRIAL
+  ACTIVE_PAID
+  SUSPENDED
+}
+
 enum Role {
   SUPER_ADMIN
   COMPANY_ADMIN
@@ -15,42 +22,52 @@ enum Role {
 }
 
 model Company {
-  id              String   @id @default(cuid())
-  name            String
-  code            String   @unique          // short code e.g. "ACME"
-  timezone        String   @default("Australia/Sydney")
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id        String        @id @default(cuid())
+  name      String?
+  code      String?       @unique
+  timezone  String        @default("Australia/Sydney")
+  isActive  Boolean       @default(true)
 
-  // Future config fields
-  annualLeaveRatio Float?  // hours accrued per worked hour
+  status    CompanyStatus @default(DRAFT)
+
+  trialStartAt  DateTime?
+  trialEndAt    DateTime?
+  employeeLimit Int?
+
+  estimatedEmployeeRange String?
+  currentRosteringMethod String?
+  phoneNumber            String?
+  jobTitle               String?
+  onboardingCompletedAt  DateTime?
+
+  annualLeaveRatio Float?
   sickLeaveRatio   Float?
 
-  users           User[]
-  employees       EmployeeProfile[]
+  users     User[]
+  employees EmployeeProfile[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model User {
-  id              String    @id @default(cuid())
-  email           String    @unique
-  passwordHash    String
-  role            Role
-  isActive        Boolean   @default(true)
+  id        String  @id @default(cuid())
+  email     String  @unique
+  passwordHash String
+  role      Role
+  isActive  Boolean @default(true)
 
-  companyId       String?   // null for SUPER_ADMIN
-  company         Company?  @relation(fields: [companyId], references: [id])
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
 
   employeeProfile EmployeeProfile?
 
-  // refresh token support
   hashedRefreshToken String?
-  resetPasswordToken   String?
-  resetPasswordExpiry DateTime?
+  resetPasswordTokenHash String?
+  resetPasswordExpiresAt DateTime?
 
-
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model EmployeeProfile {
@@ -63,15 +80,14 @@ model EmployeeProfile {
 
   firstName       String
   lastName        String
-  position        String?      // e.g. Developer, Cleaner, Kitchen Staff
+  position        String?
 
-  // For future attendance features
   hasWFHPermission  Boolean @default(false)
   homeLatitude      Float?
   homeLongitude     Float?
-  isSummaryRequired Boolean @default(false) // end-of-shift summary requirement
+  isSummaryRequired Boolean @default(false)
 
-  managerId       String?      // who approves leave, etc (User id)
+  managerId       String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
