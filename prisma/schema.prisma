@@ -161,8 +161,11 @@ model AttendanceSession {
   employee            EmployeeProfile @relation(fields: [employeeId], references: [id])
   shiftId             String?
   shift               Shift?    @relation(fields: [shiftId], references: [id])
-  startedAt           DateTime
-  endedAt             DateTime?
+  actualStartAt       DateTime
+  actualEndAt         DateTime?
+  effectiveStartAt    DateTime
+  effectiveEndAt      DateTime?
+  wasEarlyCheckIn     Boolean   @default(false)
   totalWorkedMinutes  Int?
 
   events              AttendanceEvent[]
