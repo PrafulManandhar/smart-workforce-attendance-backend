@@ -69,6 +69,7 @@ model Company {
   users     User[]
   employees EmployeeProfile[]
   shifts    Shift[]
+  workLocations WorkLocation[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -120,12 +121,30 @@ model EmployeeProfile {
   updatedAt       DateTime @updatedAt
 }
 
+model WorkLocation {
+  id          String    @id @default(cuid())
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  name        String
+  address     String?
+  latitude    Float?
+  longitude   Float?
+  isActive    Boolean   @default(true)
+
+  shifts      Shift[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
 model Shift {
   id          String    @id @default(cuid())
   employeeId  String
   employee    EmployeeProfile @relation(fields: [employeeId], references: [id])
   companyId   String
   company     Company   @relation(fields: [companyId], references: [id])
+  workLocationId String?
+  workLocation WorkLocation? @relation(fields: [workLocationId], references: [id])
   startAt     DateTime
   endAt       DateTime
   type        ShiftType
