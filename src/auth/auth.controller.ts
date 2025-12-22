@@ -6,6 +6,7 @@ import { RefreshTokenDto } from './dtos/refresh-token.dto';
 import { ForgotPasswordDto } from './dtos/forget-password.dto';
 import { ResetPasswordDto } from './dtos/reset-password.dto';
 import { AuthGuard } from '@nestjs/passport';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -13,6 +14,7 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('login')
+  @Public()
   @ApiOperation({ summary: 'Login (all users)' })
   @ApiResponse({ status: 200 })
   login(@Body() dto: LoginDto) {
@@ -20,12 +22,14 @@ export class AuthController {
   }
 
   @Post('super-admin/login')
+  @Public()
   @ApiOperation({ summary: 'Super Admin login' })
   @ApiResponse({ status: 200 })
   superAdminLogin(@Body() dto: LoginDto) {
     return this.authService.superAdminLogin(dto);
   }
 
+  @Public()
   @UseGuards(AuthGuard('jwt-refresh'))
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
@@ -36,6 +40,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Public()
   @ApiOperation({ summary: 'Request password reset token' })
   @ApiResponse({ status: 200 })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
@@ -43,6 +48,7 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @Public()
   @ApiOperation({ summary: 'Reset password using token' })
   @ApiResponse({ status: 200 })
   resetPassword(@Body() dto: ResetPasswordDto) {

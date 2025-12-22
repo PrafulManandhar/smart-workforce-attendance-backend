@@ -53,4 +53,13 @@ export class CompaniesController {
   ) {
     return this.companiesService.onboarding(user.companyId, dto);
   }
+
+  @Get('test-trial')
+  @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER, AppRole.EMPLOYEE)
+  @ApiOperation({ summary: 'Test endpoint - Only accessible for active trial companies (trial not expired)' })
+  @ApiResponse({ status: 200, description: 'Trial access confirmed' })
+  @ApiResponse({ status: 404, description: 'Company not found or trial expired' })
+  testTrialAccess(@CurrentUser() user: { companyId: string }) {
+    return this.companiesService.testTrialAccess(user.companyId);
+  }
 }
