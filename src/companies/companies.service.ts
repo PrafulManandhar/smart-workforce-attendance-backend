@@ -1,12 +1,17 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import { CompanySignupDto } from './dtos/company-signup.dto';
+import { CompanyOnboardingDto } from './dtos/company-onboarding.dto';
 import { AppRole } from '../common/enums/role.enum';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class CompaniesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private authService: AuthService,
+  ) {}
 
   findAll() {
     return this.prisma.company.findMany();
@@ -49,10 +54,57 @@ export class CompaniesService {
         },
       });
 
-      return { companyId: company.id, userId: user.id };
+      return { company, user };
     });
 
-    return result;
+    // Generate tokens using AuthService
+    const tokens = await this.authService.issueTokens({
+      id: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      companyId: result.user.companyId ?? null,
+    });
+
+    return {
+      ...tokens,
+      role: result.user.role,
+      companyId: result.company.id,
+      userId: result.user.id,
+    };
+  }
+
+  async onboarding(companyId: string, dto: CompanyOnboardingDto) {
+    // Check if company exists
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    // Calculate trial dates: 21 days from now
+    const now = new Date();
+    const trialEndAt = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000); // 21 days in milliseconds
+
+    // Update company with onboarding data and activate trial
+    const updatedCompany = await this.prisma.company.update({
+      where: { id: companyId },
+      data: {
+        name: dto.companyName,
+        estimatedEmployeeRange: dto.estimatedEmployeeRange,
+        currentRosteringMethod: dto.currentRosteringMethod,
+        phoneNumber: dto.phoneNumber,
+        jobTitle: dto.jobTitle,
+        status: 'ACTIVE_TRIAL',
+        trialStartAt: now,
+        trialEndAt,
+        employeeLimit: 10,
+        onboardingCompletedAt: now,
+      },
+    });
+
+    return updatedCompany;
   }
 
   // super admin operations will live here
