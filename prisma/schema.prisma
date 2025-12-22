@@ -64,6 +64,8 @@ model Company {
   annualLeaveRatio Float?
   sickLeaveRatio   Float?
 
+  earlyCheckInMinutes Int? @default(30)
+
   users     User[]
   employees EmployeeProfile[]
   shifts    Shift[]
