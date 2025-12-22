@@ -4,9 +4,11 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Public } from '../common/decorators/public.decorator';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AppRole } from '../common/enums/role.enum';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CompanySignupDto } from './dtos/company-signup.dto';
+import { CompanyOnboardingDto } from './dtos/company-onboarding.dto';
 
 @ApiTags('Companies')
 @ApiBearerAuth('access-token') 
@@ -38,5 +40,17 @@ export class CompaniesController {
     body: { name: string; code: string; timezone?: string },
   ) {
     return this.companiesService.create(body);
+  }
+
+  @Post('onboarding')
+  @Roles(AppRole.COMPANY_ADMIN)
+  @ApiOperation({ summary: 'Complete company onboarding and activate trial' })
+  @ApiResponse({ status: 200, description: 'Company onboarding completed and trial activated successfully' })
+  @ApiResponse({ status: 404, description: 'Company not found' })
+  onboarding(
+    @CurrentUser() user: { companyId: string },
+    @Body() dto: CompanyOnboardingDto,
+  ) {
+    return this.companiesService.onboarding(user.companyId, dto);
   }
 }
