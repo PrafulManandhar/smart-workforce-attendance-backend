@@ -3,10 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 import { CompanySignupDto } from './dtos/company-signup.dto';
 import { AppRole } from '../common/enums/role.enum';
+import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class CompaniesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private authService: AuthService,
+  ) {}
 
   findAll() {
     return this.prisma.company.findMany();
@@ -49,10 +53,23 @@ export class CompaniesService {
         },
       });
 
-      return { companyId: company.id, userId: user.id };
+      return { company, user };
     });
 
-    return result;
+    // Generate tokens using AuthService
+    const tokens = await this.authService.issueTokens({
+      id: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      companyId: result.user.companyId ?? null,
+    });
+
+    return {
+      ...tokens,
+      role: result.user.role,
+      companyId: result.company.id,
+      userId: result.user.id,
+    };
   }
 
   // super admin operations will live here

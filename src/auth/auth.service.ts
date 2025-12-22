@@ -25,7 +25,7 @@ export class AuthService {
     return this.prisma.user.findUnique({ where: { email } });
   }
 
-  private async issueTokens(user: { id: string; email: string; role: any; companyId: string | null }) {
+  async issueTokens(user: { id: string; email: string; role: any; companyId: string | null }) {
     const accessPayload = {
       sub: user.id,
       email: user.email,
@@ -140,8 +140,8 @@ export class AuthService {
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
-        resetPasswordToken: tokenHash,
-        resetPasswordExpiry: expiresAt,
+        resetPasswordTokenHash: tokenHash,
+        resetPasswordExpiresAt: expiresAt,
       },
     });
 
@@ -160,8 +160,8 @@ export class AuthService {
 
     const user = await this.prisma.user.findFirst({
       where: {
-        resetPasswordToken: tokenHash,
-        resetPasswordExpiry: { gt: new Date() },
+        resetPasswordTokenHash: tokenHash,
+        resetPasswordExpiresAt: { gt: new Date() },
         isActive: true,
       },
     });
@@ -174,8 +174,8 @@ export class AuthService {
       where: { id: user.id },
       data: {
         passwordHash,
-        resetPasswordToken: null,
-        resetPasswordExpiry: null,
+        resetPasswordTokenHash: null,
+        resetPasswordExpiresAt: null,
         hashedRefreshToken: null, // optional security: force re-login everywhere
       },
     });
