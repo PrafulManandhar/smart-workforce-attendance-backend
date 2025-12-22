@@ -107,5 +107,36 @@ export class CompaniesService {
     return updatedCompany;
   }
 
+  async testTrialAccess(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    // Check if company has ACTIVE_TRIAL status
+    if ((company as any).status !== 'ACTIVE_TRIAL') {
+      throw new NotFoundException('Company is not on active trial');
+    }
+
+    // Check if trial has expired
+    const now = new Date();
+    if ((company as any).trialEndAt && (company as any).trialEndAt < now) {
+      throw new NotFoundException('Trial period has expired');
+    }
+
+    return {
+      message: 'Trial access confirmed - Test endpoint working!',
+      companyId: company.id,
+      companyName: company.name,
+      status: (company as any).status,
+      trialStartAt: (company as any).trialStartAt,
+      trialEndAt: (company as any).trialEndAt,
+      employeeLimit: (company as any).employeeLimit,
+    };
+  }
+
   // super admin operations will live here
 }
