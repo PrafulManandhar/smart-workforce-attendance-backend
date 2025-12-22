@@ -9,6 +9,7 @@ import { AppRole } from '../common/enums/role.enum';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { CompanySignupDto } from './dtos/company-signup.dto';
 import { CompanyOnboardingDto } from './dtos/company-onboarding.dto';
+import { CompanyOptOutDto } from './dtos/company-opt-out.dto';
 
 @ApiTags('Companies')
 @ApiBearerAuth('access-token') 
@@ -64,6 +65,22 @@ export class CompaniesController {
       throw new NotFoundException('User does not belong to a company');
     }
     return this.companiesService.getMyCompany(user.companyId);
+  }
+
+  @Post('opt-out')
+  @Roles(AppRole.COMPANY_ADMIN)
+  @ApiOperation({ summary: 'Opt out - Suspend company and mark inactive (requires feedback reason)' })
+  @ApiResponse({ status: 200, description: 'Company suspended and marked inactive successfully' })
+  @ApiResponse({ status: 404, description: 'Company not found' })
+  @ApiResponse({ status: 400, description: 'Invalid feedback provided' })
+  optOut(
+    @CurrentUser() user: { companyId: string },
+    @Body() dto: CompanyOptOutDto,
+  ) {
+    if (!user.companyId) {
+      throw new NotFoundException('User does not belong to a company');
+    }
+    return this.companiesService.optOut(user.companyId, dto);
   }
 
   @Get('test-trial')
