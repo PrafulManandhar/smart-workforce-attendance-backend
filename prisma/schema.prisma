@@ -21,6 +21,27 @@ enum Role {
   EMPLOYEE
 }
 
+enum ShiftType {
+  MORNING
+  EVENING
+  NIGHT
+  DAY
+  OTHER
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  BREAK_IN
+  BREAK_OUT
+  CHECK_OUT
+}
+
+enum LocationSource {
+  OFFICE
+  HOME
+  REMOTE
+}
+
 model Company {
   id        String        @id @default(cuid())
   name      String?
@@ -45,6 +66,7 @@ model Company {
 
   users     User[]
   employees EmployeeProfile[]
+  shifts    Shift[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -88,6 +110,63 @@ model EmployeeProfile {
   isSummaryRequired Boolean @default(false)
 
   managerId       String?
+
+  shifts              Shift[]
+  attendanceSessions  AttendanceSession[]
+
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model Shift {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    EmployeeProfile @relation(fields: [employeeId], references: [id])
+  companyId   String
+  company     Company   @relation(fields: [companyId], references: [id])
+  startAt     DateTime
+  endAt       DateTime
+  type        ShiftType
+
+  attendanceSessions AttendanceSession[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model AttendanceSession {
+  id                  String    @id @default(cuid())
+  employeeId          String
+  employee            EmployeeProfile @relation(fields: [employeeId], references: [id])
+  shiftId             String?
+  shift               Shift?    @relation(fields: [shiftId], references: [id])
+  startedAt           DateTime
+  endedAt             DateTime?
+  totalWorkedMinutes  Int?
+
+  events              AttendanceEvent[]
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model AttendanceEvent {
+  id          String              @id @default(cuid())
+  sessionId   String
+  session     AttendanceSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type        AttendanceEventType
+  createdAt   DateTime            @default(now())
+
+  locationSnapshot LocationSnapshot?
+}
+
+model LocationSnapshot {
+  id          String          @id @default(cuid())
+  eventId     String          @unique
+  event       AttendanceEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  latitude    Float
+  longitude   Float
+  source      LocationSource
+
+  createdAt   DateTime        @default(now())
 }
