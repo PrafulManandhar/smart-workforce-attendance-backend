@@ -107,6 +107,30 @@ export class CompaniesService {
     return updatedCompany;
   }
 
+  async getMyCompany(companyId: string) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    return {
+      id: company.id,
+      name: company.name,
+      code: company.code,
+      timezone: company.timezone,
+      status: (company as any).status,
+      trialStartAt: (company as any).trialStartAt,
+      trialEndAt: (company as any).trialEndAt,
+      employeeLimit: (company as any).employeeLimit,
+      onboardingCompletedAt: (company as any).onboardingCompletedAt,
+      createdAt: company.createdAt,
+      updatedAt: company.updatedAt,
+    };
+  }
+
   async testTrialAccess(companyId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },

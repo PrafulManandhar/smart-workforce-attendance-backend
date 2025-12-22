@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, NotFoundException } from '@nestjs/common';
 import { CompaniesService } from './companies.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -52,6 +52,18 @@ export class CompaniesController {
     @Body() dto: CompanyOnboardingDto,
   ) {
     return this.companiesService.onboarding(user.companyId, dto);
+  }
+
+  @Get('me')
+  @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER, AppRole.EMPLOYEE)
+  @ApiOperation({ summary: 'Get current user\'s company information' })
+  @ApiResponse({ status: 200, description: 'Company information retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Company not found' })
+  getMyCompany(@CurrentUser() user: { companyId: string }) {
+    if (!user.companyId) {
+      throw new NotFoundException('User does not belong to a company');
+    }
+    return this.companiesService.getMyCompany(user.companyId);
   }
 
   @Get('test-trial')
