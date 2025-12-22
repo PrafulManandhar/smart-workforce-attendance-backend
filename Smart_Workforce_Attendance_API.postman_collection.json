@@ -1,0 +1,299 @@
+{
+	"info": {
+		"_postman_id": "smart-workforce-attendance-api",
+		"name": "Smart Workforce Attendance API",
+		"description": "Postman collection for Smart Workforce Attendance SaaS Backend APIs",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Auth",
+			"item": [
+				{
+					"name": "Login (All Users)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@root.saas\",\n  \"password\": \"Admin123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"login"
+							]
+						},
+						"description": "Login endpoint for all users (employees, managers, company admins)"
+					},
+					"response": []
+				},
+				{
+					"name": "Super Admin Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@root.saas\",\n  \"password\": \"Admin123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/auth/super-admin/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"super-admin",
+								"login"
+							]
+						},
+						"description": "Login endpoint specifically for Super Admin users"
+					},
+					"response": []
+				},
+				{
+					"name": "Refresh Token",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{refresh_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/refresh",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"refresh"
+							]
+						},
+						"description": "Refresh access token using refresh token"
+					},
+					"response": []
+				},
+				{
+					"name": "Forgot Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"admin@root.saas\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/forgot-password",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"forgot-password"
+							]
+						},
+						"description": "Request password reset token via email"
+					},
+					"response": []
+				},
+				{
+					"name": "Reset Password",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"token\": \"reset-token-here\",\n  \"newPassword\": \"NewStrongPass123!\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/auth/reset-password",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"auth",
+								"reset-password"
+							]
+						},
+						"description": "Reset password using token received from forgot password"
+					},
+					"response": []
+				}
+			],
+			"description": "Authentication endpoints"
+		},
+		{
+			"name": "Companies",
+			"item": [
+				{
+					"name": "Get All Companies",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/companies",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies"
+							]
+						},
+						"description": "Get all companies (Super Admin only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Create Company",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Example Company\",\n  \"code\": \"EXCOM\",\n  \"timezone\": \"America/New_York\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/companies",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies"
+							]
+						},
+						"description": "Create a new company (Super Admin or Company Admin)"
+					},
+					"response": []
+				}
+			],
+			"description": "Company management endpoints"
+		},
+		{
+			"name": "Users",
+			"item": [
+				{
+					"name": "Get Current User",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/users/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"users",
+								"me"
+							]
+						},
+						"description": "Get current authenticated user profile (all roles)"
+					},
+					"response": []
+				}
+			],
+			"description": "User management endpoints"
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "access_token",
+			"value": "",
+			"type": "string"
+		},
+		{
+			"key": "refresh_token",
+			"value": "",
+			"type": "string"
+		}
+	]
+}
+
