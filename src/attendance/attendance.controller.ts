@@ -20,7 +20,7 @@ export class AttendanceController {
   @Roles(AppRole.EMPLOYEE)
   @ApiOperation({ summary: 'Check in for attendance' })
   @ApiResponse({ status: 201, description: 'Successfully checked in', type: CheckInResponseDto })
-  @ApiResponse({ status: 403, description: 'No active shift found or forbidden' })
+  @ApiResponse({ status: 403, description: 'No active shift found, not at assigned work location, or forbidden' })
   @ApiResponse({ status: 404, description: 'Employee profile not found' })
   @ApiResponse({ status: 409, description: 'Employee already has an active attendance session' })
   async checkIn(
