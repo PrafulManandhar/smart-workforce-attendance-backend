@@ -4,7 +4,7 @@ import { CheckInDto } from './dtos/check-in.dto';
 import { CheckInResponseDto } from './dtos/check-in-response.dto';
 import { calculateDistanceMeters } from '../common/utils/geo';
 
-const MAX_DISTANCE_METERS = 100;
+const MAX_CHECKIN_DISTANCE_METERS = 100;
 
 @Injectable()
 export class AttendanceService {
@@ -79,8 +79,10 @@ export class AttendanceService {
           workLocation.longitude,
         );
 
-        if (distanceMeters > MAX_DISTANCE_METERS) {
-          throw new ForbiddenException('Not at assigned work location');
+        if (distanceMeters > MAX_CHECKIN_DISTANCE_METERS) {
+          throw new ForbiddenException(
+            `Not at assigned work location. Distance: ${Math.round(distanceMeters)}m (max allowed: ${MAX_CHECKIN_DISTANCE_METERS}m)`,
+          );
         }
       }
     }
@@ -100,8 +102,8 @@ export class AttendanceService {
     // Determine if this is an early check-in
     const wasEarlyCheckIn = now < shift.startAt;
 
-    // Calculate effective start time (use shift.startAt if early check-in, otherwise use actual time)
-    const effectiveStartAt = wasEarlyCheckIn ? shift.startAt : now;
+    // Calculate effective start time: max(now, shift.startAt)
+    const effectiveStartAt = new Date(Math.max(now.getTime(), shift.startAt.getTime()));
 
     // Create AttendanceSession
     const session = await this.prisma.attendanceSession.create({
@@ -136,9 +138,8 @@ export class AttendanceService {
     return {
       sessionId: session.id,
       shiftId: shift.id,
-      actualStartAt: session.actualStartAt,
       effectiveStartAt: session.effectiveStartAt,
-      wasEarlyCheckIn: session.wasEarlyCheckIn,
+      actualStartAt: session.actualStartAt,
     };
   }
 }
