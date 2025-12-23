@@ -1,8 +1,119 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CheckInDto } from './dtos/check-in.dto';
+import { CheckInResponseDto } from './dtos/check-in-response.dto';
 
 @Injectable()
 export class AttendanceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
+
+  async checkIn(userId: string, companyId: string, dto: CheckInDto): Promise<CheckInResponseDto> {
+    // Find employee profile for current user and company
+    const employeeProfile = await this.prisma.employeeProfile.findFirst({
+      where: {
+        userId,
+        companyId,
+      },
+    });
+
+    if (!employeeProfile) {
+      throw new NotFoundException('Employee profile not found');
+    }
+
+    // Fetch company separately to ensure full type information
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    // Access earlyCheckInMinutes - using type assertion since Prisma types should include this field
+    // If IDE still shows error, restart TypeScript server (VS Code: Cmd/Ctrl+Shift+P -> "TypeScript: Restart TS Server")
+    const earlyCheckInMinutes = (company as { earlyCheckInMinutes?: number | null }).earlyCheckInMinutes ?? 30;
+
+    // Get current time
+    const now = new Date();
+
+    // Calculate early check-in window start time
+    const earlyWindowStart = new Date(now.getTime() - earlyCheckInMinutes * 60 * 1000);
+
+    // Find shift that matches "now" with early window
+    // Allow check-in if now is between (shift.startAt - earlyWindow) and shift.endAt
+    const shift = await this.prisma.shift.findFirst({
+      where: {
+        employeeId: employeeProfile.id,
+        startAt: {
+          lte: new Date(now.getTime() + earlyCheckInMinutes * 60 * 1000), // shift.startAt <= now + earlyWindow
+        },
+        endAt: {
+          gte: now, // shift.endAt >= now
+        },
+      },
+      orderBy: {
+        startAt: 'desc',
+      },
+    });
+
+    if (!shift) {
+      throw new ForbiddenException('No active shift found');
+    }
+
+    // Check if employee already has an active AttendanceSession (actualEndAt is null)
+    const activeSession = await this.prisma.attendanceSession.findFirst({
+      where: {
+        employeeId: employeeProfile.id,
+        actualEndAt: null,
+      },
+    });
+
+    if (activeSession) {
+      throw new ConflictException('Employee already has an active attendance session');
+    }
+
+    // Determine if this is an early check-in
+    const wasEarlyCheckIn = now < shift.startAt;
+
+    // Calculate effective start time (use shift.startAt if early check-in, otherwise use actual time)
+    const effectiveStartAt = wasEarlyCheckIn ? shift.startAt : now;
+
+    // Create AttendanceSession
+    const session = await this.prisma.attendanceSession.create({
+      data: {
+        employeeId: employeeProfile.id,
+        shiftId: shift.id,
+        actualStartAt: now,
+        effectiveStartAt: effectiveStartAt,
+        wasEarlyCheckIn,
+      },
+    });
+
+    // Create AttendanceEvent (CHECK_IN)
+    const event = await this.prisma.attendanceEvent.create({
+      data: {
+        sessionId: session.id,
+        type: 'CHECK_IN',
+      },
+    });
+
+    // Create LocationSnapshot
+    await this.prisma.locationSnapshot.create({
+      data: {
+        eventId: event.id,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        source: 'OFFICE', // Default to OFFICE for now, location validation will be added later
+      },
+    });
+
+    return {
+      sessionId: session.id,
+      shiftId: shift.id,
+      actualStartAt: session.actualStartAt,
+      effectiveStartAt: session.effectiveStartAt,
+      wasEarlyCheckIn: session.wasEarlyCheckIn,
+    };
+  }
 }
 
