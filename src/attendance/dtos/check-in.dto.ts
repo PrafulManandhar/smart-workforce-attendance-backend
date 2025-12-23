@@ -26,3 +26,4 @@ export class CheckInDto {
   longitude!: number;
 }
 
+
