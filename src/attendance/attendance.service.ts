@@ -386,6 +386,21 @@ export class AttendanceService {
       throw new ForbiddenException('Attendance session is not linked to a shift');
     }
 
+    // Load the last AttendanceEvent for break-state validation
+    const lastEvent = await this.prisma.attendanceEvent.findFirst({
+      where: {
+        sessionId: session.id,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    // Reject checkout if last event is BREAK_IN
+    if (lastEvent && lastEvent.type === 'BREAK_IN') {
+      throw new BadRequestException('You must end your break before checking out');
+    }
+
     // Validate location against shift work location
     const distanceMeters = this.validateLocationAndCalculateDistance(
       dto.latitude,
