@@ -12,6 +12,8 @@ import { BreakInDto } from './dtos/break-in.dto';
 import { BreakOutDto } from './dtos/break-out.dto';
 import { BreakInResponseDto } from './dtos/break-in-response.dto';
 import { BreakOutResponseDto } from './dtos/break-out-response.dto';
+import { CheckOutDto } from './dtos/check-out.dto';
+import { CheckOutResponseDto } from './dtos/check-out-response.dto';
 
 @ApiTags('Attendance')
 @ApiBearerAuth('access-token')
@@ -72,6 +74,24 @@ export class AttendanceController {
     }
 
     return this.attendanceService.breakOut(user.userId, user.companyId, dto);
+  }
+
+  @Post('check-out')
+  @Roles(AppRole.EMPLOYEE)
+  @ApiOperation({ summary: 'Check out from attendance session' })
+  @ApiResponse({ status: 201, description: 'Successfully checked out', type: CheckOutResponseDto })
+  @ApiResponse({ status: 400, description: 'Summary required but not provided' })
+  @ApiResponse({ status: 403, description: 'Not at assigned work location, session not linked to shift, or forbidden' })
+  @ApiResponse({ status: 404, description: 'Employee profile not found or no active attendance session' })
+  async checkOut(
+    @CurrentUser() user: { userId: string; companyId: string; role: string },
+    @Body() dto: CheckOutDto,
+  ): Promise<CheckOutResponseDto> {
+    if (!user.companyId) {
+      throw new ForbiddenException('User does not belong to a company');
+    }
+
+    return this.attendanceService.checkOut(user.userId, user.companyId, dto);
   }
 }
 

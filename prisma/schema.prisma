@@ -148,6 +148,8 @@ model Shift {
   startAt     DateTime
   endAt       DateTime
   type        ShiftType
+  paidBreakMinutes Int? @default(0)
+  unpaidBreakMinutes Int? @default(0)
 
   attendanceSessions AttendanceSession[]
 
@@ -167,6 +169,7 @@ model AttendanceSession {
   effectiveEndAt      DateTime?
   wasEarlyCheckIn     Boolean   @default(false)
   totalWorkedMinutes  Int?
+  summary             String?
 
   events              AttendanceEvent[]
 
