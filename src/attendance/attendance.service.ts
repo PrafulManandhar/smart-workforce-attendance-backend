@@ -1,7 +1,9 @@
-import { Injectable, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CheckInDto } from './dtos/check-in.dto';
 import { CheckInResponseDto } from './dtos/check-in-response.dto';
+import { CheckOutDto } from './dtos/check-out.dto';
+import { CheckOutResponseDto } from './dtos/check-out-response.dto';
 import { calculateDistanceMeters } from '../common/utils/geo';
 
 const MAX_CHECKIN_DISTANCE_METERS = 100;
@@ -140,6 +142,147 @@ export class AttendanceService {
       shiftId: shift.id,
       effectiveStartAt: session.effectiveStartAt,
       actualStartAt: session.actualStartAt,
+    };
+  }
+
+  async checkOut(userId: string, companyId: string, dto: CheckOutDto): Promise<CheckOutResponseDto> {
+    // Find employee profile for current user and company
+    const employeeProfile = await this.prisma.employeeProfile.findFirst({
+      where: {
+        userId,
+        companyId,
+      },
+    });
+
+    if (!employeeProfile) {
+      throw new NotFoundException('Employee profile not found');
+    }
+
+    // Find active attendance session
+    const session = await this.prisma.attendanceSession.findFirst({
+      where: {
+        employeeId: employeeProfile.id,
+        actualEndAt: null,
+      },
+      include: {
+        shift: {
+          include: {
+            workLocation: true,
+          },
+        },
+        events: {
+          orderBy: {
+            createdAt: 'asc',
+          },
+        },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('No active attendance session found');
+    }
+
+    if (!session.shift) {
+      throw new ForbiddenException('Attendance session is not linked to a shift');
+    }
+
+    // Validate location against shift work location
+    let distanceMeters: number | null = null;
+    if (session.shift.workLocation) {
+      const workLocation = session.shift.workLocation;
+      
+      if (workLocation.latitude !== null && workLocation.longitude !== null) {
+        distanceMeters = calculateDistanceMeters(
+          dto.latitude,
+          dto.longitude,
+          workLocation.latitude,
+          workLocation.longitude,
+        );
+
+        if (distanceMeters > MAX_CHECKIN_DISTANCE_METERS) {
+          throw new ForbiddenException(
+            `Not at assigned work location. Distance: ${Math.round(distanceMeters)}m (max allowed: ${MAX_CHECKIN_DISTANCE_METERS}m)`,
+          );
+        }
+      }
+    }
+
+    // Check if summary is required
+    if (employeeProfile.isSummaryRequired && (!dto.summary || dto.summary.trim().length === 0)) {
+      throw new BadRequestException('Summary is required for this employee');
+    }
+
+    // Get current time
+    const now = new Date();
+
+    // Calculate actual break minutes from BREAK_IN / BREAK_OUT events
+    let actualBreakMinutes = 0;
+    let breakInTime: Date | null = null;
+
+    for (const event of session.events) {
+      if (event.type === 'BREAK_IN') {
+        breakInTime = event.createdAt;
+      } else if (event.type === 'BREAK_OUT' && breakInTime) {
+        const breakDuration = event.createdAt.getTime() - breakInTime.getTime();
+        actualBreakMinutes += Math.round(breakDuration / (1000 * 60));
+        breakInTime = null; // Reset for next break pair
+      }
+    }
+
+    // If there's an unclosed BREAK_IN, calculate up to now
+    if (breakInTime) {
+      const breakDuration = now.getTime() - breakInTime.getTime();
+      actualBreakMinutes += Math.round(breakDuration / (1000 * 60));
+    }
+
+    // Read paid and unpaid break minutes from shift
+    const assignedPaidBreak = session.shift.paidBreakMinutes ?? 0;
+    const assignedUnpaidBreak = session.shift.unpaidBreakMinutes ?? 0;
+
+    // Calculate unpaid deduction: max(assignedUnpaidBreak, max(0, actualBreakMinutes - assignedPaidBreak))
+    const unpaidDeduction = Math.max(
+      assignedUnpaidBreak,
+      Math.max(0, actualBreakMinutes - assignedPaidBreak),
+    );
+
+    // Calculate totalWorkedMinutes: (effectiveEndAt - effectiveStartAt) - unpaidDeduction
+    const effectiveDuration = now.getTime() - session.effectiveStartAt.getTime();
+    const effectiveDurationMinutes = Math.round(effectiveDuration / (1000 * 60));
+    const totalWorkedMinutes = effectiveDurationMinutes - unpaidDeduction;
+
+    // Update session with end times, summary, and totalWorkedMinutes
+    const updatedSession = await this.prisma.attendanceSession.update({
+      where: { id: session.id },
+      data: {
+        actualEndAt: now,
+        effectiveEndAt: now,
+        totalWorkedMinutes,
+        summary: dto.summary?.trim() || null,
+      },
+    });
+
+    // Create AttendanceEvent (CHECK_OUT)
+    const event = await this.prisma.attendanceEvent.create({
+      data: {
+        sessionId: session.id,
+        type: 'CHECK_OUT',
+      },
+    });
+
+    // Create LocationSnapshot
+    await this.prisma.locationSnapshot.create({
+      data: {
+        eventId: event.id,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        source: 'OFFICE',
+        distanceMeters,
+      },
+    });
+
+    return {
+      sessionId: updatedSession.id,
+      totalWorkedMinutes: updatedSession.totalWorkedMinutes!,
     };
   }
 }
