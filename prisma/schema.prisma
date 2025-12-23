@@ -191,6 +191,7 @@ model LocationSnapshot {
   latitude    Float
   longitude   Float
   source      LocationSource
+  distanceMeters Float?
 
   createdAt   DateTime        @default(now())
 }

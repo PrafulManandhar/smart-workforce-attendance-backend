@@ -2,6 +2,9 @@ import { Injectable, ForbiddenException, NotFoundException, ConflictException } 
 import { PrismaService } from '../prisma/prisma.service';
 import { CheckInDto } from './dtos/check-in.dto';
 import { CheckInResponseDto } from './dtos/check-in-response.dto';
+import { calculateDistanceMeters } from '../common/utils/geo';
+
+const MAX_DISTANCE_METERS = 100;
 
 @Injectable()
 export class AttendanceService {
@@ -51,6 +54,9 @@ export class AttendanceService {
           gte: now, // shift.endAt >= now
         },
       },
+      include: {
+        workLocation: true,
+      },
       orderBy: {
         startAt: 'desc',
       },
@@ -58,6 +64,25 @@ export class AttendanceService {
 
     if (!shift) {
       throw new ForbiddenException('No active shift found');
+    }
+
+    // Validate GPS coordinates against assigned work location and calculate distance
+    let distanceMeters: number | null = null;
+    if (shift.workLocation) {
+      const workLocation = shift.workLocation;
+      
+      if (workLocation.latitude !== null && workLocation.longitude !== null) {
+        distanceMeters = calculateDistanceMeters(
+          dto.latitude,
+          dto.longitude,
+          workLocation.latitude,
+          workLocation.longitude,
+        );
+
+        if (distanceMeters > MAX_DISTANCE_METERS) {
+          throw new ForbiddenException('Not at assigned work location');
+        }
+      }
     }
 
     // Check if employee already has an active AttendanceSession (actualEndAt is null)
@@ -104,6 +129,7 @@ export class AttendanceService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         source: 'OFFICE', // Default to OFFICE for now, location validation will be added later
+        distanceMeters,
       },
     });
 
