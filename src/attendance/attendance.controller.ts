@@ -8,6 +8,10 @@ import { AppRole } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CheckInDto } from './dtos/check-in.dto';
 import { CheckInResponseDto } from './dtos/check-in-response.dto';
+import { BreakInDto } from './dtos/break-in.dto';
+import { BreakOutDto } from './dtos/break-out.dto';
+import { BreakInResponseDto } from './dtos/break-in-response.dto';
+import { BreakOutResponseDto } from './dtos/break-out-response.dto';
 
 @ApiTags('Attendance')
 @ApiBearerAuth('access-token')
@@ -32,6 +36,42 @@ export class AttendanceController {
     }
 
     return this.attendanceService.checkIn(user.userId, user.companyId, dto);
+  }
+
+  @Post('break-in')
+  @Roles(AppRole.EMPLOYEE)
+  @ApiOperation({ summary: 'Start a break during active attendance session' })
+  @ApiResponse({ status: 201, description: 'Successfully started break', type: BreakInResponseDto })
+  @ApiResponse({ status: 400, description: 'Break-in already recorded or invalid state' })
+  @ApiResponse({ status: 403, description: 'Not at assigned work location, session not linked to shift, or forbidden' })
+  @ApiResponse({ status: 404, description: 'Employee profile not found or no active attendance session' })
+  async breakIn(
+    @CurrentUser() user: { userId: string; companyId: string; role: string },
+    @Body() dto: BreakInDto,
+  ): Promise<BreakInResponseDto> {
+    if (!user.companyId) {
+      throw new ForbiddenException('User does not belong to a company');
+    }
+
+    return this.attendanceService.breakIn(user.userId, user.companyId, dto);
+  }
+
+  @Post('break-out')
+  @Roles(AppRole.EMPLOYEE)
+  @ApiOperation({ summary: 'End a break during active attendance session' })
+  @ApiResponse({ status: 201, description: 'Successfully ended break', type: BreakOutResponseDto })
+  @ApiResponse({ status: 400, description: 'No active break found or invalid state' })
+  @ApiResponse({ status: 403, description: 'Not at assigned work location, session not linked to shift, or forbidden' })
+  @ApiResponse({ status: 404, description: 'Employee profile not found or no active attendance session' })
+  async breakOut(
+    @CurrentUser() user: { userId: string; companyId: string; role: string },
+    @Body() dto: BreakOutDto,
+  ): Promise<BreakOutResponseDto> {
+    if (!user.companyId) {
+      throw new ForbiddenException('User does not belong to a company');
+    }
+
+    return this.attendanceService.breakOut(user.userId, user.companyId, dto);
   }
 }
 
