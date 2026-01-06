@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { CompaniesModule } from './companies/companies.module';
 import { AttendanceModule } from './attendance/attendance.module';
+import { WorkLocationsModule } from './work-locations/work-locations.module';
 import { TenantMiddleware } from './common/middleware/tenant.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { CompanyOnboardingGuard } from './common/guards/company-onboarding.guard';
@@ -19,6 +20,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     UsersModule,
     CompaniesModule,
     AttendanceModule,
+    WorkLocationsModule,
   ],
   providers: [
     {
