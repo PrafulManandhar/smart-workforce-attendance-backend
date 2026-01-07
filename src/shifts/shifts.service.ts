@@ -94,5 +94,61 @@ export class ShiftsService {
       },
     });
   }
+
+  async findAll(
+    companyId: string,
+    from: Date,
+    to: Date,
+    employeeId?: string,
+    workLocationId?: string,
+  ) {
+    // Build where clause
+    const where: any = {
+      companyId,
+      // Shifts that overlap with the date range
+      // A shift overlaps if: startAt <= to AND endAt >= from
+      startAt: { lte: to },
+      endAt: { gte: from },
+    };
+
+    // Add optional filters
+    if (employeeId) {
+      where.employeeId = employeeId;
+    }
+
+    if (workLocationId) {
+      where.workLocationId = workLocationId;
+    }
+
+    // Query shifts with workLocation fields
+    return this.prisma.shift.findMany({
+      where,
+      orderBy: {
+        startAt: 'asc',
+      },
+      select: {
+        id: true,
+        employeeId: true,
+        companyId: true,
+        workLocationId: true,
+        startAt: true,
+        endAt: true,
+        type: true,
+        paidBreakMinutes: true,
+        unpaidBreakMinutes: true,
+        createdAt: true,
+        updatedAt: true,
+        workLocation: {
+          select: {
+            id: true,
+            name: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+          },
+        },
+      },
+    });
+  }
 }
 
