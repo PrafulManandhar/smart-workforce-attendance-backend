@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, ConflictException }
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateShiftDto } from './dtos/create-shift.dto';
 import { UpdateShiftDto } from './dtos/update-shift.dto';
+import { BulkCreateShiftDto } from './dtos/bulk-create-shift.dto';
 import { ShiftType } from '@prisma/client';
 
 @Injectable()
@@ -290,6 +291,153 @@ export class ShiftsService {
         status: 'CANCELLED',
       },
     });
+  }
+
+  async bulkCreate(companyId: string, bulkCreateShiftDto: BulkCreateShiftDto) {
+    const shifts = bulkCreateShiftDto.shifts;
+
+    if (!shifts || shifts.length === 0) {
+      throw new BadRequestException('Shifts array cannot be empty');
+    }
+
+    // Validate all shifts first before creating any
+    // Collect all employee IDs and work location IDs for batch validation
+    const employeeIds = [...new Set(shifts.map((s) => s.employeeId))];
+    const workLocationIds = [
+      ...new Set(shifts.map((s) => s.workLocationId).filter((id): id is string => !!id)),
+    ];
+
+    // Batch validate employees
+    const employees = await this.prisma.employeeProfile.findMany({
+      where: {
+        id: { in: employeeIds },
+        companyId,
+      },
+    });
+
+    const validEmployeeIds = new Set(employees.map((e) => e.id));
+    for (const shift of shifts) {
+      if (!validEmployeeIds.has(shift.employeeId)) {
+        throw new NotFoundException(
+          `Employee ${shift.employeeId} not found or does not belong to company`,
+        );
+      }
+    }
+
+    // Batch validate work locations if provided
+    if (workLocationIds.length > 0) {
+      const workLocations = await this.prisma.workLocation.findMany({
+        where: {
+          id: { in: workLocationIds },
+          companyId,
+          isActive: true,
+        },
+      });
+
+      const validWorkLocationIds = new Set(workLocations.map((wl) => wl.id));
+      for (const shift of shifts) {
+        if (shift.workLocationId && !validWorkLocationIds.has(shift.workLocationId)) {
+          throw new NotFoundException(
+            `Work location ${shift.workLocationId} not found, not active, or does not belong to company`,
+          );
+        }
+      }
+    }
+
+    // Validate each shift's time and breaks
+    for (let i = 0; i < shifts.length; i++) {
+      const shift = shifts[i];
+      const {
+        startAt,
+        endAt,
+        paidBreakMinutes = 0,
+        unpaidBreakMinutes = 0,
+      } = shift;
+
+      // Validate startAt < endAt
+      if (startAt >= endAt) {
+        throw new BadRequestException(`Shift ${i + 1}: startAt must be before endAt`);
+      }
+
+      // Validate break minutes >= 0
+      if (paidBreakMinutes < 0 || unpaidBreakMinutes < 0) {
+        throw new BadRequestException(
+          `Shift ${i + 1}: Break minutes must be greater than or equal to 0`,
+        );
+      }
+
+      // Validate break minutes don't exceed shift duration
+      const shiftDurationMinutes = (endAt.getTime() - startAt.getTime()) / (1000 * 60);
+      const totalBreakMinutes = paidBreakMinutes + unpaidBreakMinutes;
+      if (totalBreakMinutes > shiftDurationMinutes) {
+        throw new BadRequestException(
+          `Shift ${i + 1}: Total break minutes (${totalBreakMinutes}) cannot exceed shift duration (${shiftDurationMinutes} minutes)`,
+        );
+      }
+    }
+
+    // Check for overlaps:
+    // 1. Between shifts in the batch
+    // 2. With existing shifts in the database
+    for (let i = 0; i < shifts.length; i++) {
+      const shift1 = shifts[i];
+      const { employeeId: empId1, startAt: start1, endAt: end1 } = shift1;
+
+      // Check overlaps with other shifts in the batch
+      for (let j = i + 1; j < shifts.length; j++) {
+        const shift2 = shifts[j];
+        const { employeeId: empId2, startAt: start2, endAt: end2 } = shift2;
+
+        // Only check overlaps for the same employee
+        if (empId1 === empId2) {
+          // Two shifts overlap if: startAt1 < endAt2 AND endAt1 > startAt2
+          if (start1 < end2 && end1 > start2) {
+            throw new ConflictException(
+              `Shift ${i + 1} overlaps with shift ${j + 1} in the batch (same employee ${empId1})`,
+            );
+          }
+        }
+      }
+
+      // Check overlaps with existing shifts in database
+      const overlappingShift = await this.prisma.shift.findFirst({
+        where: {
+          employeeId: empId1,
+          startAt: { lt: end1 },
+          endAt: { gt: start1 },
+        },
+      });
+
+      if (overlappingShift) {
+        throw new ConflictException(
+          `Shift ${i + 1} overlaps with existing shift (ID: ${overlappingShift.id}) from ${overlappingShift.startAt} to ${overlappingShift.endAt}`,
+        );
+      }
+    }
+
+    // All validations passed, create all shifts in a transaction
+    const createdShifts = await this.prisma.$transaction(
+      shifts.map((shift) =>
+        this.prisma.shift.create({
+          data: {
+            employeeId: shift.employeeId,
+            companyId,
+            workLocationId: shift.workLocationId || null,
+            startAt: shift.startAt,
+            endAt: shift.endAt,
+            type: shift.type ?? ShiftType.OTHER,
+            status: 'PUBLISHED',
+            paidBreakMinutes: shift.paidBreakMinutes ?? 0,
+            unpaidBreakMinutes: shift.unpaidBreakMinutes ?? 0,
+          },
+        }),
+      ),
+    );
+
+    return {
+      count: createdShifts.length,
+      ids: createdShifts.map((shift) => shift.id),
+    };
   }
 }
 

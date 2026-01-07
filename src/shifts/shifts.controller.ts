@@ -9,6 +9,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse, ApiParam } from '@ne
 import { CreateShiftDto } from './dtos/create-shift.dto';
 import { UpdateShiftDto } from './dtos/update-shift.dto';
 import { GetShiftsQueryDto } from './dtos/get-shifts-query.dto';
+import { BulkCreateShiftDto } from './dtos/bulk-create-shift.dto';
 
 @ApiTags('Shifts')
 @ApiBearerAuth('access-token')
@@ -59,6 +60,20 @@ export class ShiftsController {
     @Body() updateShiftDto: UpdateShiftDto,
   ) {
     return this.shiftsService.update(id, user.companyId, updateShiftDto);
+  }
+
+  @Post('bulk')
+  @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER)
+  @ApiOperation({ summary: 'Create multiple shifts in bulk (all or nothing)' })
+  @ApiResponse({ status: 201, description: 'All shifts created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid request data or validation failed' })
+  @ApiResponse({ status: 404, description: 'Employee or work location not found' })
+  @ApiResponse({ status: 409, description: 'Shift overlaps with existing or other shifts in batch' })
+  bulkCreate(
+    @CurrentUser() user: { companyId: string },
+    @Body() bulkCreateShiftDto: BulkCreateShiftDto,
+  ) {
+    return this.shiftsService.bulkCreate(user.companyId, bulkCreateShiftDto);
   }
 
   @Post()
