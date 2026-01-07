@@ -6,6 +6,17 @@ import { CreateWorkLocationDto } from './dtos/create-work-location.dto';
 export class WorkLocationsService {
   constructor(private prisma: PrismaService) {}
 
+  async findAll(companyId: string) {
+    return this.prisma.workLocation.findMany({
+      where: {
+        companyId,
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+  }
+
   async create(companyId: string, createWorkLocationDto: CreateWorkLocationDto) {
     // Verify company exists
     const company = await this.prisma.company.findUnique({

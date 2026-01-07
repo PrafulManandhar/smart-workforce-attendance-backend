@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
 import { WorkLocationsService } from './work-locations.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -14,6 +14,14 @@ import { CreateWorkLocationDto } from './dtos/create-work-location.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class WorkLocationsController {
   constructor(private workLocationsService: WorkLocationsService) {}
+
+  @Get()
+  @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER)
+  @ApiOperation({ summary: 'List all work locations for the current company' })
+  @ApiResponse({ status: 200, description: 'List of work locations retrieved successfully' })
+  findAll(@CurrentUser() user: { companyId: string }) {
+    return this.workLocationsService.findAll(user.companyId);
+  }
 
   @Post()
   @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER)
