@@ -1,6 +1,7 @@
-import { IsString, IsOptional, IsISO8601, IsNumber, Min } from 'class-validator';
+import { IsString, IsOptional, IsISO8601, IsNumber, Min, IsEnum } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { ShiftType } from '@prisma/client';
 
 export class UpdateShiftDto {
   @ApiPropertyOptional({ example: 'clx1234567890', description: 'Employee profile ID' })
@@ -43,5 +44,14 @@ export class UpdateShiftDto {
   @IsString()
   @IsOptional()
   notes?: string;
+
+  @ApiPropertyOptional({ 
+    enum: ShiftType, 
+    example: ShiftType.DAY, 
+    description: 'Shift type' 
+  })
+  @IsEnum(ShiftType)
+  @IsOptional()
+  type?: ShiftType;
 }
 
