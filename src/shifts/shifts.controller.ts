@@ -35,6 +35,16 @@ export class ShiftsController {
     );
   }
 
+  @Post(':id/cancel')
+  @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER)
+  @ApiOperation({ summary: 'Cancel a shift (sets status to CANCELLED)' })
+  @ApiParam({ name: 'id', description: 'Shift ID' })
+  @ApiResponse({ status: 200, description: 'Shift cancelled successfully' })
+  @ApiResponse({ status: 404, description: 'Shift not found or does not belong to company' })
+  cancel(@Param('id') id: string, @CurrentUser() user: { companyId: string }) {
+    return this.shiftsService.cancel(id, user.companyId);
+  }
+
   @Patch(':id')
   @Roles(AppRole.COMPANY_ADMIN, AppRole.MANAGER)
   @ApiOperation({ summary: 'Update a shift' })

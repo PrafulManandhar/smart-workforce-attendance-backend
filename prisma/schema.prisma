@@ -42,6 +42,12 @@ enum LocationSource {
   REMOTE
 }
 
+enum ShiftStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+}
+
 model Company {
   id        String        @id @default(cuid())
   name      String?
@@ -148,6 +154,7 @@ model Shift {
   startAt     DateTime
   endAt       DateTime
   type        ShiftType
+  status      ShiftStatus @default(PUBLISHED)
   paidBreakMinutes Int? @default(0)
   unpaidBreakMinutes Int? @default(0)
 

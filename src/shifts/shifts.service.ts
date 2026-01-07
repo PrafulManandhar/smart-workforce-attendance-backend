@@ -81,7 +81,7 @@ export class ShiftsService {
       );
     }
 
-    // Create the shift
+    // Create the shift (default status is PUBLISHED from schema)
     return this.prisma.shift.create({
       data: {
         employeeId,
@@ -90,6 +90,7 @@ export class ShiftsService {
         startAt,
         endAt,
         type,
+        status: 'PUBLISHED', // Explicitly set, though schema default handles it
         paidBreakMinutes,
         unpaidBreakMinutes,
       },
@@ -110,6 +111,7 @@ export class ShiftsService {
       // A shift overlaps if: startAt <= to AND endAt >= from
       startAt: { lte: to },
       endAt: { gte: from },
+      // Admin list shows all shifts including CANCELLED, so no status filter
     };
 
     // Add optional filters
@@ -135,6 +137,7 @@ export class ShiftsService {
         startAt: true,
         endAt: true,
         type: true,
+        status: true,
         paidBreakMinutes: true,
         unpaidBreakMinutes: true,
         createdAt: true,
@@ -260,8 +263,31 @@ export class ShiftsService {
         startAt: mergedData.startAt,
         endAt: mergedData.endAt,
         type: mergedData.type,
+        status: existingShift.status, // Preserve existing status (only cancel endpoint changes it)
         paidBreakMinutes: mergedData.paidBreakMinutes,
         unpaidBreakMinutes: mergedData.unpaidBreakMinutes,
+      },
+    });
+  }
+
+  async cancel(id: string, companyId: string) {
+    // Find existing shift and validate company ownership
+    const existingShift = await this.prisma.shift.findFirst({
+      where: {
+        id,
+        companyId,
+      },
+    });
+
+    if (!existingShift) {
+      throw new NotFoundException('Shift not found or does not belong to company');
+    }
+
+    // Update shift status to CANCELLED
+    return this.prisma.shift.update({
+      where: { id },
+      data: {
+        status: 'CANCELLED',
       },
     });
   }
