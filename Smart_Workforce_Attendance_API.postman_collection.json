@@ -24,7 +24,7 @@
 							"raw": "{\n  \"email\": \"admin@root.saas\",\n  \"password\": \"Admin123!\"\n}"
 						},
 						"url": {
-							"raw": "{{base_url}}/auth/login",
+							"raw": "{{base_url}}/api/auth/login",
 							"host": [
 								"{{base_url}}"
 							],
@@ -53,7 +53,7 @@
 							"raw": "{\n  \"email\": \"admin@root.saas\",\n  \"password\": \"Admin123!\"\n}"
 						},
 						"url": {
-							"raw": "{{base_url}}/auth/super-admin/login",
+							"raw": "{{base_url}}/api/auth/super-admin/login",
 							"host": [
 								"{{base_url}}"
 							],
@@ -172,6 +172,35 @@
 			"name": "Companies",
 			"item": [
 				{
+					"name": "Company Signup",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"referralSource\": \"Google Search\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/companies/signup",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies",
+								"signup"
+							]
+						},
+						"description": "Company signup - Create company and admin user (Public endpoint)"
+					},
+					"response": []
+				},
+				{
 					"name": "Get All Companies",
 					"request": {
 						"auth": {
@@ -237,6 +266,144 @@
 						"description": "Create a new company (Super Admin or Company Admin)"
 					},
 					"response": []
+				},
+				{
+					"name": "Company Onboarding",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"companyName\": \"Acme Corporation\",\n  \"estimatedEmployeeRange\": \"10-50\",\n  \"currentRosteringMethod\": \"Excel Spreadsheets\",\n  \"phoneNumber\": \"+1234567890\",\n  \"jobTitle\": \"HR Manager\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/companies/onboarding",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies",
+								"onboarding"
+							]
+						},
+						"description": "Complete company onboarding and activate trial (Company Admin only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Get My Company",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/companies/me",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies",
+								"me"
+							]
+						},
+						"description": "Get current user's company information (Company Admin, Manager, Employee)"
+					},
+					"response": []
+				},
+				{
+					"name": "Company Opt Out",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"feedback\": \"The system does not meet our requirements\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/companies/opt-out",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies",
+								"opt-out"
+							]
+						},
+						"description": "Opt out - Suspend company and mark inactive (requires feedback reason) (Company Admin only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Test Trial Access",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/companies/test-trial",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"companies",
+								"test-trial"
+							]
+						},
+						"description": "Test endpoint - Only accessible for active trial companies (trial not expired) (Company Admin, Manager, Employee)"
+					},
+					"response": []
 				}
 			],
 			"description": "Company management endpoints"
@@ -276,6 +443,248 @@
 				}
 			],
 			"description": "User management endpoints"
+		},
+		{
+			"name": "Attendance",
+			"item": [
+				{
+					"name": "Check In",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": -33.8688,\n  \"longitude\": 151.2093\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/attendance/check-in",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"attendance",
+								"check-in"
+							]
+						},
+						"description": "Check in for attendance (Employee only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Break In",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": -33.8688,\n  \"longitude\": 151.2093\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/attendance/break-in",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"attendance",
+								"break-in"
+							]
+						},
+						"description": "Start a break during active attendance session (Employee only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Break Out",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": -33.8688,\n  \"longitude\": 151.2093\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/attendance/break-out",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"attendance",
+								"break-out"
+							]
+						},
+						"description": "End a break during active attendance session (Employee only)"
+					},
+					"response": []
+				},
+				{
+					"name": "Check Out",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"latitude\": -33.8688,\n  \"longitude\": 151.2093,\n  \"summary\": \"Completed all assigned tasks for the day\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/attendance/check-out",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"attendance",
+								"check-out"
+							]
+						},
+						"description": "Check out from attendance session (Employee only). Summary is optional but required if employee.isSummaryRequired is true."
+					},
+					"response": []
+				}
+			],
+			"description": "Attendance management endpoints"
+		},
+		{
+			"name": "Shifts",
+			"item": [
+				{
+					"name": "Get Today Shift",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/shifts/today",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"shifts",
+								"today"
+							]
+						},
+						"description": "Get employee's current or next shift for today (Employee only). Returns shift if found, or null if no shift exists for today."
+					},
+					"response": []
+				}
+			],
+			"description": "Shift management endpoints"
+		},
+		{
+			"name": "Work Locations",
+			"item": [
+				{
+					"name": "Create Work Location",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{access_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Main Office\",\n  \"address\": \"123 Main St, City, State 12345\",\n  \"latitude\": 40.7128,\n  \"longitude\": -74.0060\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/work-locations",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"work-locations"
+							]
+						},
+						"description": "Create a new work location (Company Admin, Manager only)"
+					},
+					"response": []
+				}
+			],
+			"description": "Work location management endpoints"
 		}
 	],
 	"variable": [
@@ -296,4 +705,3 @@
 		}
 	]
 }
-
