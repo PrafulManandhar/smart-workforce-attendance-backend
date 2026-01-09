@@ -12,6 +12,9 @@ import { generateInviteToken, hashInviteToken, getInviteExpiry } from '../common
 import { InviteStatus, Role as PrismaRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../common/email/email.service';
+import { AuthService } from '../auth/auth.service';
+import * as bcrypt from 'bcryptjs';
+import { AcceptInviteDto } from './dtos/accept-invite.dto';
 
 @Injectable()
 export class InvitesService {
@@ -19,6 +22,7 @@ export class InvitesService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly emailService: EmailService,
+    private readonly authService: AuthService,
   ) {}
 
   /**
@@ -175,6 +179,144 @@ export class InvitesService {
       invitedName: invite.invitedName,
       companyName: invite.company?.name ?? null,
       expiresAt: invite.tokenExpiresAt,
+    };
+  }
+
+  /**
+   * Accept an invite and perform self-onboarding.
+   *
+   * NOTE: The current data model supports a single company per user (via User.companyId)
+   * and a single employee profile per user. Multi-company membership is approximated
+   * by ensuring the user either has no company yet, or belongs to the invite's company.
+   */
+  async acceptInvite(dto: AcceptInviteDto) {
+    const normalizedEmail = dto.email.trim().toLowerCase();
+
+    // 1) Validate and fetch invite (pending, not expired, not revoked)
+    const trimmedToken = dto.token.trim();
+    const tokenHash = hashInviteToken(trimmedToken);
+
+    const now = new Date();
+
+    const invite = await this.prisma.employeeInvite.findFirst({
+      where: {
+        tokenHash,
+        status: InviteStatus.PENDING,
+        tokenExpiresAt: { gt: now },
+      },
+      include: {
+        company: true,
+      },
+    });
+
+    if (!invite) {
+      throw new GoneException('Invite token is invalid or has expired');
+    }
+
+    if (invite.status === InviteStatus.REVOKED) {
+      throw new ForbiddenException('This invite has been revoked');
+    }
+
+    // 2) Email must match invitedEmail exactly after normalization
+    if (normalizedEmail !== invite.invitedEmail) {
+      throw new BadRequestException('Email does not match the invite');
+    }
+
+    // 3) User + profile handling
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    let user = existingUser;
+
+    if (user) {
+      // If user already belongs to another company, block for now (single-company model)
+      if (user.companyId && user.companyId !== invite.companyId) {
+        throw new ForbiddenException('This email is already associated with another company');
+      }
+
+      // Attach user to company if not yet attached
+      if (!user.companyId) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            companyId: invite.companyId,
+            // Do not override existing role; if user is new and role is generic, they can be upgraded manually
+          },
+        });
+      }
+
+      // Ensure employee profile exists
+      const existingProfile = await this.prisma.employeeProfile.findUnique({
+        where: { userId: user.id },
+      });
+
+      if (!existingProfile) {
+        const nameSource = invite.invitedName ?? normalizedEmail;
+        const [first, ...rest] = nameSource.split(' ');
+        const firstName = first || 'Employee';
+        const lastName = rest.join(' ') || firstName;
+
+        await this.prisma.employeeProfile.create({
+          data: {
+            userId: user.id,
+            companyId: invite.companyId,
+            firstName,
+            lastName,
+          },
+        });
+      }
+    } else {
+      // New user path
+      const passwordHash = await bcrypt.hash(dto.password, 10);
+
+      const nameSource = invite.invitedName ?? normalizedEmail;
+      const [first, ...rest] = nameSource.split(' ');
+      const firstName = first || 'Employee';
+      const lastName = rest.join(' ') || firstName;
+
+      user = await this.prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          passwordHash,
+          role: invite.role,
+          companyId: invite.companyId,
+          isActive: true,
+        },
+      });
+
+      await this.prisma.employeeProfile.create({
+        data: {
+          userId: user.id,
+          companyId: invite.companyId,
+          firstName,
+          lastName,
+        },
+      });
+    }
+
+    // 4) Mark invite as accepted / single-use
+    await this.prisma.employeeInvite.update({
+      where: { id: invite.id },
+      data: {
+        status: InviteStatus.ACCEPTED,
+        acceptedAt: new Date(),
+      },
+    });
+
+    // 5) Issue tokens to match existing auth behaviour
+    const tokens = await this.authService.issueTokens({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      companyId: user.companyId ?? null,
+    });
+
+    return {
+      success: true,
+      ...tokens,
+      role: user.role,
+      companyId: user.companyId ?? null,
     };
   }
 }
