@@ -55,6 +55,13 @@ enum InviteStatus {
   REVOKED
 }
 
+enum AuditEventType {
+  INVITE_CREATED
+  INVITE_RESENT
+  INVITE_REVOKED
+  INVITE_ACCEPTED
+}
+
 model Company {
   id        String        @id @default(cuid())
   name      String?
@@ -138,6 +145,29 @@ model EmployeeInvite {
   @@index([invitedEmail])
   @@index([status])
   @@index([tokenExpiresAt])
+}
+
+model AuditLog {
+  id           String          @id @default(cuid())
+
+  companyId    String?
+  company      Company?        @relation(fields: [companyId], references: [id])
+
+  actorUserId  String?
+  actorUser    User?           @relation(fields: [actorUserId], references: [id])
+
+  inviteId     String?
+  invite       EmployeeInvite? @relation(fields: [inviteId], references: [id])
+
+  eventType    AuditEventType
+  metadata     Json?
+
+  createdAt    DateTime        @default(now())
+
+  @@index([companyId])
+  @@index([actorUserId])
+  @@index([inviteId])
+  @@index([eventType])
 }
 
 model EmployeeProfile {

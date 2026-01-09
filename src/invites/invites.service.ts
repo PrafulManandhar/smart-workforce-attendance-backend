@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeInviteDto } from './dtos/create-employee-invite.dto';
 import { AppRole } from '../common/enums/role.enum';
 import { generateInviteToken, hashInviteToken, getInviteExpiry } from '../common/security/invite-token.util';
-import { InviteStatus, Role as PrismaRole } from '@prisma/client';
+import { AuditEventType, InviteStatus, Role as PrismaRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../common/email/email.service';
 import { AuthService } from '../auth/auth.service';
@@ -114,6 +114,39 @@ export class InvitesService {
     // Normalize email
     const normalizedEmail = dto.invitedEmail.trim().toLowerCase();
 
+    // Enforce company invite/employee cap (employeeLimit)
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyIdParam },
+      select: { employeeLimit: true },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Company not found');
+    }
+
+    if (company.employeeLimit != null) {
+      const now = new Date();
+
+      const [activeEmployees, pendingInvites] = await this.prisma.$transaction([
+        this.prisma.employeeProfile.count({
+          where: { companyId: companyIdParam },
+        }),
+        this.prisma.employeeInvite.count({
+          where: {
+            companyId: companyIdParam,
+            status: InviteStatus.PENDING,
+            tokenExpiresAt: { gt: now },
+          },
+        }),
+      ]);
+
+      if (activeEmployees + pendingInvites >= company.employeeLimit) {
+        throw new ConflictException(
+          'Employee limit reached for this company. Cannot create more invites.',
+        );
+      }
+    }
+
     // Enforce single pending invite per company + email
     const existingPending = await this.prisma.employeeInvite.findFirst({
       where: {
@@ -147,6 +180,21 @@ export class InvitesService {
         tokenExpiresAt: expiresAt,
         status: InviteStatus.PENDING,
         createdByUserId: currentUser.userId,
+      },
+    });
+
+    // Audit log: invite created
+    await this.prisma.auditLog.create({
+      data: {
+        companyId: invite.companyId,
+        actorUserId: currentUser.userId,
+        inviteId: invite.id,
+        eventType: AuditEventType.INVITE_CREATED,
+        metadata: {
+          invitedEmail: invite.invitedEmail,
+          invitedName: invite.invitedName,
+          role: invite.role,
+        } as any,
       },
     });
 
@@ -358,11 +406,24 @@ export class InvitesService {
     }
 
     // 4) Mark invite as accepted / single-use
-    await this.prisma.employeeInvite.update({
+    const updatedInvite = await this.prisma.employeeInvite.update({
       where: { id: invite.id },
       data: {
         status: InviteStatus.ACCEPTED,
         acceptedAt: new Date(),
+      },
+    });
+
+    // Audit log: invite accepted
+    await this.prisma.auditLog.create({
+      data: {
+        companyId: updatedInvite.companyId,
+        actorUserId: user.id,
+        inviteId: updatedInvite.id,
+        eventType: AuditEventType.INVITE_ACCEPTED,
+        metadata: {
+          invitedEmail: updatedInvite.invitedEmail,
+        } as any,
       },
     });
 
@@ -431,6 +492,21 @@ export class InvitesService {
         tokenHash,
         tokenExpiresAt: expiresAt,
         status: InviteStatus.PENDING,
+      },
+    });
+
+    // Audit log: invite resent
+    await this.prisma.auditLog.create({
+      data: {
+        companyId: updatedInvite.companyId,
+        actorUserId: currentUser.userId,
+        inviteId: updatedInvite.id,
+        eventType: AuditEventType.INVITE_RESENT,
+        metadata: {
+          invitedEmail: updatedInvite.invitedEmail,
+          previousExpiresAt: invite.tokenExpiresAt,
+          newExpiresAt: expiresAt,
+        } as any,
       },
     });
 
@@ -504,6 +580,19 @@ export class InvitesService {
       data: {
         status: InviteStatus.REVOKED,
         revokedAt: new Date(),
+      },
+    });
+
+    // Audit log: invite revoked
+    await this.prisma.auditLog.create({
+      data: {
+        companyId: revokedInvite.companyId,
+        actorUserId: currentUser.userId,
+        inviteId: revokedInvite.id,
+        eventType: AuditEventType.INVITE_REVOKED,
+        metadata: {
+          invitedEmail: revokedInvite.invitedEmail,
+        } as any,
       },
     });
 
