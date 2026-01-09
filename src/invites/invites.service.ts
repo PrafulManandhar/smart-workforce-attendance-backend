@@ -1,4 +1,10 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  GoneException,
+  Injectable,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeInviteDto } from './dtos/create-employee-invite.dto';
 import { AppRole } from '../common/enums/role.enum';
@@ -110,6 +116,65 @@ export class InvitesService {
       expiresAt,
       // In DEV / non-production, include inviteLink with raw token to simplify testing
       ...(isProd ? {} : { inviteLink }),
+    };
+  }
+
+  /**
+   * Verify a public invite token.
+   *
+   * - Hashes the provided token and looks up the corresponding invite
+   * - Ensures invite is pending and not expired
+   * - If expired, marks as EXPIRED and returns 410 Gone
+   * - If revoked, returns 403 Forbidden
+   */
+  async verifyInviteToken(token: string) {
+    const trimmed = token?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('Invite token is required');
+    }
+
+    const tokenHash = hashInviteToken(trimmed);
+
+    const invite = await this.prisma.employeeInvite.findFirst({
+      where: { tokenHash },
+      include: {
+        company: {
+          select: { name: true },
+        },
+      },
+    });
+
+    if (!invite) {
+      // Do not reveal whether token ever existed
+      throw new GoneException('Invite token is invalid or has expired');
+    }
+
+    // Handle revoked explicitly
+    if (invite.status === InviteStatus.REVOKED) {
+      throw new ForbiddenException('This invite has been revoked');
+    }
+
+    const now = new Date();
+
+    // If pending but past expiry, mark as expired and signal as gone
+    if (invite.status === InviteStatus.PENDING && invite.tokenExpiresAt <= now) {
+      await this.prisma.employeeInvite.update({
+        where: { id: invite.id },
+        data: { status: InviteStatus.EXPIRED },
+      });
+      throw new GoneException('Invite token has expired');
+    }
+
+    // Already marked as expired or accepted: treat as gone / unusable
+    if (invite.status === InviteStatus.EXPIRED || invite.status === InviteStatus.ACCEPTED) {
+      throw new GoneException('Invite token is no longer valid');
+    }
+
+    return {
+      invitedEmail: invite.invitedEmail,
+      invitedName: invite.invitedName,
+      companyName: invite.company?.name ?? null,
+      expiresAt: invite.tokenExpiresAt,
     };
   }
 }
