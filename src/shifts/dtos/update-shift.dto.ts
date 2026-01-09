@@ -1,0 +1,57 @@
+import { IsString, IsOptional, IsISO8601, IsNumber, Min, IsEnum } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
+import { ShiftType } from '@prisma/client';
+
+export class UpdateShiftDto {
+  @ApiPropertyOptional({ example: 'clx1234567890', description: 'Employee profile ID' })
+  @IsString()
+  @IsOptional()
+  employeeId?: string;
+
+  @ApiPropertyOptional({ example: 'clx0987654321', description: 'Work location ID' })
+  @IsString()
+  @IsOptional()
+  workLocationId?: string;
+
+  @ApiPropertyOptional({ example: '2024-01-15T09:00:00Z', description: 'Shift start time (ISO 8601 date string)' })
+  @IsISO8601({ strict: true })
+  @IsOptional()
+  @Type(() => Date)
+  startAt?: Date;
+
+  @ApiPropertyOptional({ example: '2024-01-15T17:00:00Z', description: 'Shift end time (ISO 8601 date string)' })
+  @IsISO8601({ strict: true })
+  @IsOptional()
+  @Type(() => Date)
+  endAt?: Date;
+
+  @ApiPropertyOptional({ example: 30, description: 'Paid break minutes' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Type(() => Number)
+  paidBreakMinutes?: number;
+
+  @ApiPropertyOptional({ example: 60, description: 'Unpaid break minutes' })
+  @IsNumber()
+  @IsOptional()
+  @Min(0)
+  @Type(() => Number)
+  unpaidBreakMinutes?: number;
+
+  @ApiPropertyOptional({ example: 'Regular shift with team meeting', description: 'Optional notes about the shift' })
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @ApiPropertyOptional({ 
+    enum: ShiftType, 
+    example: ShiftType.DAY, 
+    description: 'Shift type' 
+  })
+  @IsEnum(ShiftType)
+  @IsOptional()
+  type?: ShiftType;
+}
+

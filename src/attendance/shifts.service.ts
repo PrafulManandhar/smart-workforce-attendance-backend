@@ -36,11 +36,13 @@ export class ShiftsService {
     // Priority: 1) Current shift (now is between startAt and endAt)
     //           2) Next shift today (startAt >= now and startAt <= endOfDay)
     // Ensure shift overlaps with today (startAt <= endOfDay AND endAt >= startOfDay)
+    // Exclude CANCELLED shifts for employees
     const shift = await this.prisma.shift.findFirst({
       where: {
         employeeId: employeeProfile.id,
         startAt: { lte: endOfDay }, // Shift starts on or before end of today
         endAt: { gte: startOfDay }, // Shift ends on or after start of today
+        status: { not: 'CANCELLED' }, // Exclude cancelled shifts
         OR: [
           {
             // Current shift: now is between startAt and endAt
