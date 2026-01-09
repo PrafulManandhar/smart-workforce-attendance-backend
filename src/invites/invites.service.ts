@@ -5,12 +5,14 @@ import { AppRole } from '../common/enums/role.enum';
 import { generateInviteToken, hashInviteToken, getInviteExpiry } from '../common/security/invite-token.util';
 import { InviteStatus, Role as PrismaRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../common/email/email.service';
 
 @Injectable()
 export class InvitesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly emailService: EmailService,
   ) {}
 
   /**
@@ -83,6 +85,24 @@ export class InvitesService {
       'http://localhost:3000';
 
     const inviteLink = `${frontendBaseUrl}/invite/accept?token=${rawToken}`;
+
+    const emailEnabledRaw = this.configService.get<string>('EMAIL_ENABLED') ?? 'false';
+    const emailEnabled = emailEnabledRaw.toLowerCase() === 'true';
+
+    if (emailEnabled) {
+      // Fire-and-forget for now; in future we might want stronger guarantees / retries
+      await this.emailService.sendEmployeeInviteEmail({
+        toEmail: normalizedEmail,
+        toName: dto.invitedName ?? null,
+        companyName: null, // can be populated by joining Company if needed
+        inviteLink,
+        expiresAt,
+      });
+    } else {
+      // Email disabled: log the invite link for development / debugging.
+      // eslint-disable-next-line no-console
+      console.log('[Email Disabled] Employee invite link:', inviteLink);
+    }
 
     return {
       message: 'Employee invite created successfully',
