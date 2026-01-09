@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   GoneException,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeInviteDto } from './dtos/create-employee-invite.dto';
@@ -15,6 +16,7 @@ import { EmailService } from '../common/email/email.service';
 import { AuthService } from '../auth/auth.service';
 import * as bcrypt from 'bcryptjs';
 import { AcceptInviteDto } from './dtos/accept-invite.dto';
+import { ListInvitesQueryDto } from './dtos/list-invites-query.dto';
 
 @Injectable()
 export class InvitesService {
@@ -24,6 +26,66 @@ export class InvitesService {
     private readonly emailService: EmailService,
     private readonly authService: AuthService,
   ) {}
+
+  /**
+   * List invites for a company with optional filters and pagination.
+   */
+  async listCompanyInvites(
+    currentUser: { userId: string; companyId: string | null; role: AppRole },
+    companyIdParam: string,
+    query: ListInvitesQueryDto,
+  ) {
+    const isSuperAdmin = currentUser.role === AppRole.SUPER_ADMIN;
+    const isCompanyAdminForCompany =
+      currentUser.role === AppRole.COMPANY_ADMIN &&
+      currentUser.companyId &&
+      currentUser.companyId === companyIdParam;
+
+    if (!isSuperAdmin && !isCompanyAdminForCompany) {
+      throw new ForbiddenException('You are not allowed to view invites for this company');
+    }
+
+    const { status, search, page = 1, pageSize = 20 } = query;
+
+    const where: any = {
+      companyId: companyIdParam,
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (search) {
+      const term = search.trim();
+      if (term.length > 0) {
+        where.OR = [
+          { invitedEmail: { contains: term, mode: 'insensitive' } },
+          { invitedName: { contains: term, mode: 'insensitive' } },
+        ];
+      }
+    }
+
+    const skip = (page - 1) * pageSize;
+    const take = pageSize;
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.employeeInvite.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take,
+      }),
+      this.prisma.employeeInvite.count({ where }),
+    ]);
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize),
+    };
+  }
 
   /**
    * Create an employee invite for a company.
@@ -317,6 +379,139 @@ export class InvitesService {
       ...tokens,
       role: user.role,
       companyId: user.companyId ?? null,
+    };
+  }
+
+  /**
+   * Resend an invite email (rotates token and extends expiry).
+   */
+  async resendInvite(
+    currentUser: { userId: string; companyId: string | null; role: AppRole },
+    companyIdParam: string,
+    inviteId: string,
+  ) {
+    const isSuperAdmin = currentUser.role === AppRole.SUPER_ADMIN;
+    const isCompanyAdminForCompany =
+      currentUser.role === AppRole.COMPANY_ADMIN &&
+      currentUser.companyId &&
+      currentUser.companyId === companyIdParam;
+
+    if (!isSuperAdmin && !isCompanyAdminForCompany) {
+      throw new ForbiddenException('You are not allowed to manage invites for this company');
+    }
+
+    const invite = await this.prisma.employeeInvite.findFirst({
+      where: {
+        id: inviteId,
+        companyId: companyIdParam,
+      },
+    });
+
+    if (!invite) {
+      throw new NotFoundException('Invite not found for this company');
+    }
+
+    if (invite.status !== InviteStatus.PENDING) {
+      throw new BadRequestException('Only pending invites can be resent');
+    }
+
+    const now = new Date();
+    if (invite.tokenExpiresAt <= now) {
+      throw new BadRequestException('Cannot resend an invite that has already expired');
+    }
+
+    // Rotate token and extend expiry
+    const rawToken = generateInviteToken();
+    const tokenHash = hashInviteToken(rawToken);
+    const expiresAt = getInviteExpiry(7);
+
+    const updatedInvite = await this.prisma.employeeInvite.update({
+      where: { id: invite.id },
+      data: {
+        tokenHash,
+        tokenExpiresAt: expiresAt,
+        status: InviteStatus.PENDING,
+      },
+    });
+
+    const isProd = this.configService.get<string>('NODE_ENV') === 'production';
+    const frontendBaseUrl =
+      this.configService.get<string>('FRONTEND_URL') ??
+      this.configService.get<string>('APP_BASE_URL') ??
+      'http://localhost:3000';
+
+    const inviteLink = `${frontendBaseUrl}/invite/accept?token=${rawToken}`;
+
+    const emailEnabledRaw = this.configService.get<string>('EMAIL_ENABLED') ?? 'false';
+    const emailEnabled = emailEnabledRaw.toLowerCase() === 'true';
+
+    if (emailEnabled) {
+      await this.emailService.sendEmployeeInviteEmail({
+        toEmail: updatedInvite.invitedEmail,
+        toName: updatedInvite.invitedName ?? null,
+        companyName: null,
+        inviteLink,
+        expiresAt,
+      });
+    } else {
+      // eslint-disable-next-line no-console
+      console.log('[Email Disabled] Employee invite link (resend):', inviteLink);
+    }
+
+    return {
+      message: 'Invite resent successfully',
+      inviteId: updatedInvite.id,
+      expiresAt,
+      ...(isProd ? {} : { inviteLink }),
+    };
+  }
+
+  /**
+   * Revoke an invite.
+   */
+  async revokeInvite(
+    currentUser: { userId: string; companyId: string | null; role: AppRole },
+    companyIdParam: string,
+    inviteId: string,
+  ) {
+    const isSuperAdmin = currentUser.role === AppRole.SUPER_ADMIN;
+    const isCompanyAdminForCompany =
+      currentUser.role === AppRole.COMPANY_ADMIN &&
+      currentUser.companyId &&
+      currentUser.companyId === companyIdParam;
+
+    if (!isSuperAdmin && !isCompanyAdminForCompany) {
+      throw new ForbiddenException('You are not allowed to manage invites for this company');
+    }
+
+    const invite = await this.prisma.employeeInvite.findFirst({
+      where: {
+        id: inviteId,
+        companyId: companyIdParam,
+      },
+    });
+
+    if (!invite) {
+      throw new NotFoundException('Invite not found for this company');
+    }
+
+    if (invite.status === InviteStatus.ACCEPTED) {
+      throw new BadRequestException('Accepted invites cannot be revoked');
+    }
+
+    const revokedInvite = await this.prisma.employeeInvite.update({
+      where: { id: invite.id },
+      data: {
+        status: InviteStatus.REVOKED,
+        revokedAt: new Date(),
+      },
+    });
+
+    return {
+      message: 'Invite revoked successfully',
+      inviteId: revokedInvite.id,
+      status: revokedInvite.status,
+      revokedAt: revokedInvite.revokedAt,
     };
   }
 }
