@@ -48,6 +48,13 @@ enum ShiftStatus {
   CANCELLED
 }
 
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
 model Company {
   id        String        @id @default(cuid())
   name      String?
@@ -76,6 +83,7 @@ model Company {
   employees EmployeeProfile[]
   shifts    Shift[]
   workLocations WorkLocation[]
+  employeeInvites EmployeeInvite[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -92,6 +100,7 @@ model User {
   company   Company? @relation(fields: [companyId], references: [id])
 
   employeeProfile EmployeeProfile?
+  createdEmployeeInvites EmployeeInvite[]
 
   hashedRefreshToken String?
   resetPasswordTokenHash String?
@@ -99,6 +108,36 @@ model User {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model EmployeeInvite {
+  id              String        @id @default(cuid())
+
+  companyId       String
+  company         Company       @relation(fields: [companyId], references: [id])
+
+  invitedEmail    String
+  invitedName     String?
+
+  role            Role          @default(EMPLOYEE)
+
+  tokenHash       String
+  tokenExpiresAt  DateTime
+
+  status          InviteStatus  @default(PENDING)
+
+  createdByUserId String
+  createdByUser   User          @relation(fields: [createdByUserId], references: [id])
+
+  createdAt       DateTime      @default(now())
+  acceptedAt      DateTime?
+  revokedAt       DateTime?
+
+  @@unique([companyId, invitedEmail, status])
+  @@index([companyId])
+  @@index([invitedEmail])
+  @@index([status])
+  @@index([tokenExpiresAt])
 }
 
 model EmployeeProfile {
