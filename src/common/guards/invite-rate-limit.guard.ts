@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, TooManyRequestsException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, HttpException, HttpStatus, Injectable } from '@nestjs/common';
 
 interface RateLimitEntry {
   windowStart: number;
@@ -31,7 +31,7 @@ export class InviteRateLimitGuard implements CanActivate {
     }
 
     if (entry.count >= InviteRateLimitGuard.MAX_REQUESTS) {
-      throw new TooManyRequestsException('Too many requests. Please try again later.');
+      throw new HttpException('Too many requests. Please try again later.', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     entry.count += 1;

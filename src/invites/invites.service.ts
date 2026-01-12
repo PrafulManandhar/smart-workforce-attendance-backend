@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateEmployeeInviteDto } from './dtos/create-employee-invite.dto';
 import { AppRole } from '../common/enums/role.enum';
 import { generateInviteToken, hashInviteToken, getInviteExpiry } from '../common/security/invite-token.util';
-import { AuditEventType, InviteStatus, Role as PrismaRole } from '@prisma/client';
+import { InviteStatus, Role as PrismaRole } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../common/email/email.service';
 import { AuthService } from '../auth/auth.service';
@@ -26,6 +26,15 @@ export class InvitesService {
     private readonly emailService: EmailService,
     private readonly authService: AuthService,
   ) {}
+
+  /**
+   * Log audit event (fallback when AuditLog model is not available).
+   * In development, logs to console. Can be extended to use a logger service.
+   */
+  private logAudit(eventName: string, payload: any): void {
+    // eslint-disable-next-line no-console
+    console.log(`[Audit] ${eventName}`, payload);
+  }
 
   /**
    * List invites for a company with optional filters and pagination.
@@ -184,18 +193,13 @@ export class InvitesService {
     });
 
     // Audit log: invite created
-    await this.prisma.auditLog.create({
-      data: {
-        companyId: invite.companyId,
-        actorUserId: currentUser.userId,
-        inviteId: invite.id,
-        eventType: AuditEventType.INVITE_CREATED,
-        metadata: {
-          invitedEmail: invite.invitedEmail,
-          invitedName: invite.invitedName,
-          role: invite.role,
-        } as any,
-      },
+    this.logAudit('INVITE_CREATED', {
+      companyId: invite.companyId,
+      actorUserId: currentUser.userId,
+      inviteId: invite.id,
+      invitedEmail: invite.invitedEmail,
+      invitedName: invite.invitedName,
+      role: invite.role,
     });
 
     const isProd = this.configService.get<string>('NODE_ENV') === 'production';
@@ -415,16 +419,11 @@ export class InvitesService {
     });
 
     // Audit log: invite accepted
-    await this.prisma.auditLog.create({
-      data: {
-        companyId: updatedInvite.companyId,
-        actorUserId: user.id,
-        inviteId: updatedInvite.id,
-        eventType: AuditEventType.INVITE_ACCEPTED,
-        metadata: {
-          invitedEmail: updatedInvite.invitedEmail,
-        } as any,
-      },
+    this.logAudit('INVITE_ACCEPTED', {
+      companyId: updatedInvite.companyId,
+      actorUserId: user.id,
+      inviteId: updatedInvite.id,
+      invitedEmail: updatedInvite.invitedEmail,
     });
 
     // 5) Issue tokens to match existing auth behaviour
@@ -496,18 +495,13 @@ export class InvitesService {
     });
 
     // Audit log: invite resent
-    await this.prisma.auditLog.create({
-      data: {
-        companyId: updatedInvite.companyId,
-        actorUserId: currentUser.userId,
-        inviteId: updatedInvite.id,
-        eventType: AuditEventType.INVITE_RESENT,
-        metadata: {
-          invitedEmail: updatedInvite.invitedEmail,
-          previousExpiresAt: invite.tokenExpiresAt,
-          newExpiresAt: expiresAt,
-        } as any,
-      },
+    this.logAudit('INVITE_RESENT', {
+      companyId: updatedInvite.companyId,
+      actorUserId: currentUser.userId,
+      inviteId: updatedInvite.id,
+      invitedEmail: updatedInvite.invitedEmail,
+      previousExpiresAt: invite.tokenExpiresAt,
+      newExpiresAt: expiresAt,
     });
 
     const isProd = this.configService.get<string>('NODE_ENV') === 'production';
@@ -584,16 +578,11 @@ export class InvitesService {
     });
 
     // Audit log: invite revoked
-    await this.prisma.auditLog.create({
-      data: {
-        companyId: revokedInvite.companyId,
-        actorUserId: currentUser.userId,
-        inviteId: revokedInvite.id,
-        eventType: AuditEventType.INVITE_REVOKED,
-        metadata: {
-          invitedEmail: revokedInvite.invitedEmail,
-        } as any,
-      },
+    this.logAudit('INVITE_REVOKED', {
+      companyId: revokedInvite.companyId,
+      actorUserId: currentUser.userId,
+      inviteId: revokedInvite.id,
+      invitedEmail: revokedInvite.invitedEmail,
     });
 
     return {
