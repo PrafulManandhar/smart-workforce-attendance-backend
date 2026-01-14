@@ -144,6 +144,7 @@ export class InvitesService {
           where: {
             companyId: companyIdParam,
             status: InviteStatus.PENDING,
+            // Use the invite token expiry field defined in the Prisma model
             tokenExpiresAt: { gt: now },
           },
         }),

@@ -31,6 +31,7 @@ export class InvitesCleanupService implements OnModuleInit, OnModuleDestroy {
       const result = await this.prisma.employeeInvite.updateMany({
         where: {
           status: InviteStatus.PENDING,
+          // Use the invite token expiry field from the Prisma model
           tokenExpiresAt: { lt: now },
         },
         data: {
