@@ -48,14 +48,28 @@ enum ShiftStatus {
   CANCELLED
 }
 
-model Company {
-  id        String        @id @default(cuid())
-  name      String?
-  code      String?       @unique
-  timezone  String        @default("Australia/Sydney")
-  isActive  Boolean       @default(true)
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
 
-  status    CompanyStatus @default(DRAFT)
+enum AuditEventType {
+  INVITE_CREATED
+  INVITE_RESENT
+  INVITE_REVOKED
+  INVITE_ACCEPTED
+}
+
+model Company {
+  id       String  @id @default(cuid())
+  name     String?
+  code     String? @unique
+  timezone String  @default("Australia/Sydney")
+  isActive Boolean @default(true)
+
+  status CompanyStatus @default(DRAFT)
 
   trialStartAt  DateTime?
   trialEndAt    DateTime?
@@ -72,28 +86,32 @@ model Company {
 
   earlyCheckInMinutes Int? @default(30)
 
-  users     User[]
-  employees EmployeeProfile[]
-  shifts    Shift[]
-  workLocations WorkLocation[]
+  users           User[]
+  employees       EmployeeProfile[]
+  shifts          Shift[]
+  workLocations   WorkLocation[]
+  employeeInvites EmployeeInvite[]
+  auditLogs       AuditLog[]        @relation("CompanyAuditLogs")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model User {
-  id        String  @id @default(cuid())
-  email     String  @unique
+  id           String  @id @default(cuid())
+  email        String  @unique
   passwordHash String
-  role      Role
-  isActive  Boolean @default(true)
+  role         Role
+  isActive     Boolean @default(true)
 
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id])
 
-  employeeProfile EmployeeProfile?
+  employeeProfile        EmployeeProfile?
+  createdEmployeeInvites EmployeeInvite[]
+  actorAuditLogs         AuditLog[]       @relation("UserAuditLogs")
 
-  hashedRefreshToken String?
+  hashedRefreshToken     String?
   resetPasswordTokenHash String?
   resetPasswordExpiresAt DateTime?
 
@@ -101,107 +119,162 @@ model User {
   updatedAt DateTime @updatedAt
 }
 
+model EmployeeInvite {
+  id String @id @default(cuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  invitedEmail String
+  invitedName  String?
+
+  role Role @default(EMPLOYEE)
+
+  tokenHash      String
+  tokenExpiresAt DateTime
+
+  status InviteStatus @default(PENDING)
+
+  createdByUserId String
+  createdByUser   User   @relation(fields: [createdByUserId], references: [id])
+
+  createdAt  DateTime  @default(now())
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+
+  auditLogs AuditLog[] @relation("InviteAuditLogs")
+
+  @@unique([companyId, invitedEmail, status])
+  @@index([companyId])
+  @@index([invitedEmail])
+  @@index([status])
+  @@index([tokenExpiresAt])
+}
+
+model AuditLog {
+  id String @id @default(cuid())
+
+  companyId String?
+  company   Company? @relation("CompanyAuditLogs", fields: [companyId], references: [id])
+
+  actorUserId String?
+  actorUser   User?   @relation("UserAuditLogs", fields: [actorUserId], references: [id])
+
+  inviteId String?
+  invite   EmployeeInvite? @relation("InviteAuditLogs", fields: [inviteId], references: [id])
+
+  eventType AuditEventType
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([actorUserId])
+  @@index([inviteId])
+  @@index([eventType])
+}
+
 model EmployeeProfile {
-  id              String   @id @default(cuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id])
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
 
-  companyId       String
-  company         Company  @relation(fields: [companyId], references: [id])
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
 
-  firstName       String
-  lastName        String
-  position        String?
+  firstName String
+  lastName  String
+  position  String?
 
   hasWFHPermission  Boolean @default(false)
   homeLatitude      Float?
   homeLongitude     Float?
   isSummaryRequired Boolean @default(false)
 
-  managerId       String?
+  managerId String?
 
-  shifts              Shift[]
-  attendanceSessions  AttendanceSession[]
+  shifts             Shift[]
+  attendanceSessions AttendanceSession[]
 
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model WorkLocation {
-  id          String    @id @default(cuid())
-  companyId   String
-  company     Company   @relation(fields: [companyId], references: [id])
-  name        String
-  address     String?
-  latitude    Float?
-  longitude   Float?
-  isActive    Boolean   @default(true)
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+  name      String
+  address   String?
+  latitude  Float?
+  longitude Float?
+  isActive  Boolean @default(true)
 
-  shifts      Shift[]
+  shifts Shift[]
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Shift {
-  id          String    @id @default(cuid())
-  employeeId  String
-  employee    EmployeeProfile @relation(fields: [employeeId], references: [id])
-  companyId   String
-  company     Company   @relation(fields: [companyId], references: [id])
-  workLocationId String?
-  workLocation WorkLocation? @relation(fields: [workLocationId], references: [id])
-  startAt     DateTime
-  endAt       DateTime
-  type        ShiftType
-  status      ShiftStatus @default(PUBLISHED)
-  paidBreakMinutes Int? @default(0)
-  unpaidBreakMinutes Int? @default(0)
+  id                 String          @id @default(cuid())
+  employeeId         String
+  employee           EmployeeProfile @relation(fields: [employeeId], references: [id])
+  companyId          String
+  company            Company         @relation(fields: [companyId], references: [id])
+  workLocationId     String?
+  workLocation       WorkLocation?   @relation(fields: [workLocationId], references: [id])
+  startAt            DateTime
+  endAt              DateTime
+  type               ShiftType
+  status             ShiftStatus     @default(PUBLISHED)
+  paidBreakMinutes   Int?            @default(0)
+  unpaidBreakMinutes Int?            @default(0)
 
   attendanceSessions AttendanceSession[]
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AttendanceSession {
-  id                  String    @id @default(cuid())
-  employeeId          String
-  employee            EmployeeProfile @relation(fields: [employeeId], references: [id])
-  shiftId             String?
-  shift               Shift?    @relation(fields: [shiftId], references: [id])
-  actualStartAt       DateTime
-  actualEndAt         DateTime?
-  effectiveStartAt    DateTime
-  effectiveEndAt      DateTime?
-  wasEarlyCheckIn     Boolean   @default(false)
-  totalWorkedMinutes  Int?
-  summary             String?
+  id                 String          @id @default(cuid())
+  employeeId         String
+  employee           EmployeeProfile @relation(fields: [employeeId], references: [id])
+  shiftId            String?
+  shift              Shift?          @relation(fields: [shiftId], references: [id])
+  actualStartAt      DateTime
+  actualEndAt        DateTime?
+  effectiveStartAt   DateTime
+  effectiveEndAt     DateTime?
+  wasEarlyCheckIn    Boolean         @default(false)
+  totalWorkedMinutes Int?
+  summary            String?
 
-  events              AttendanceEvent[]
+  events AttendanceEvent[]
 
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model AttendanceEvent {
-  id          String              @id @default(cuid())
-  sessionId   String
-  session     AttendanceSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  type        AttendanceEventType
-  createdAt   DateTime            @default(now())
+  id        String              @id @default(cuid())
+  sessionId String
+  session   AttendanceSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      AttendanceEventType
+  createdAt DateTime            @default(now())
 
   locationSnapshot LocationSnapshot?
 }
 
 model LocationSnapshot {
-  id          String          @id @default(cuid())
-  eventId     String          @unique
-  event       AttendanceEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  latitude    Float
-  longitude   Float
-  source      LocationSource
+  id             String          @id @default(cuid())
+  eventId        String          @unique
+  event          AttendanceEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  latitude       Float
+  longitude      Float
+  source         LocationSource
   distanceMeters Float?
 
-  createdAt   DateTime        @default(now())
+  createdAt DateTime @default(now())
 }
