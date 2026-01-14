@@ -6,7 +6,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AppRole } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateEmployeeInviteDto } from './dtos/create-employee-invite.dto';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ListInvitesQueryDto } from './dtos/list-invites-query.dto';
 
 @ApiTags('Invites')
@@ -37,6 +37,7 @@ export class InvitesController {
   @Roles(AppRole.COMPANY_ADMIN, AppRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Create an employee invite for a company (admin-only)' })
   @ApiParam({ name: 'companyId', description: 'Company ID for which to create the invite' })
+  @ApiBody({ type: CreateEmployeeInviteDto })
   @ApiResponse({ status: 201, description: 'Invite created successfully' })
   @ApiResponse({ status: 403, description: 'User is not allowed to create invites for this company' })
   @ApiResponse({ status: 409, description: 'Pending invite already exists for this email and company' })
