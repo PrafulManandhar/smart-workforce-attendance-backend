@@ -16,7 +16,9 @@ import { EmailService } from '../common/email/email.service';
 import { AuthService } from '../auth/auth.service';
 import * as bcrypt from 'bcryptjs';
 import { AcceptInviteDto } from './dtos/accept-invite.dto';
+import { AcceptEmployeeInviteDto } from './dtos/accept-employee-invite.dto';
 import { ListInvitesQueryDto } from './dtos/list-invites-query.dto';
+import { UnprocessableEntityException } from '@nestjs/common';
 
 @Injectable()
 export class InvitesService {
@@ -591,6 +593,169 @@ export class InvitesService {
       inviteId: revokedInvite.id,
       status: revokedInvite.status,
       revokedAt: revokedInvite.revokedAt,
+    };
+  }
+
+  /**
+   * Accept an employee invite and complete self-onboarding.
+   * 
+   * This endpoint:
+   * - Validates the invite token (exists, PENDING, not expired)
+   * - Checks for duplicate users (same email + companyId)
+   * - Creates User with email from invite, password from request
+   * - Creates EmployeeProfile with firstName/lastName from request
+   * - Marks invite as ACCEPTED
+   * - Returns JWT tokens + user + company info
+   * 
+   * All operations are performed in a single atomic transaction.
+   */
+  async acceptEmployeeInvite(dto: AcceptEmployeeInviteDto) {
+    // Validate password strength (min 8 chars, at least 1 letter, 1 number)
+    const passwordRegex = /^(?=.*[A-Za-z])(?=.*\d).+$/;
+    if (!passwordRegex.test(dto.password)) {
+      throw new UnprocessableEntityException(
+        'Password must contain at least one letter and one number',
+      );
+    }
+
+    if (dto.password.length < 8) {
+      throw new UnprocessableEntityException('Password must be at least 8 characters long');
+    }
+
+    // Hash the token from request
+    const trimmedToken = dto.token.trim();
+    if (!trimmedToken) {
+      throw new BadRequestException('Token is required');
+    }
+    const tokenHash = hashInviteToken(trimmedToken);
+
+    const now = new Date();
+
+    // Perform all operations in a single atomic transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // 1) Load invite from DB and validate
+      const invite = await tx.employeeInvite.findFirst({
+        where: {
+          tokenHash,
+        },
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      });
+
+      if (!invite) {
+        throw new NotFoundException('Invalid token');
+      }
+
+      // Validate invite status
+      if (invite.status !== InviteStatus.PENDING) {
+        if (invite.status === InviteStatus.ACCEPTED) {
+          throw new ConflictException('Invite has already been accepted');
+        }
+        if (invite.status === InviteStatus.EXPIRED) {
+          throw new GoneException('Invite token has expired');
+        }
+        if (invite.status === InviteStatus.REVOKED) {
+          throw new ForbiddenException('Invite has been revoked');
+        }
+      }
+
+      // Validate invite not expired
+      if (invite.tokenExpiresAt <= now) {
+        // Mark as expired if still PENDING
+        if (invite.status === InviteStatus.PENDING) {
+          await tx.employeeInvite.update({
+            where: { id: invite.id },
+            data: { status: InviteStatus.EXPIRED },
+          });
+        }
+        throw new GoneException('Invite token has expired');
+      }
+
+      // 2) Check user uniqueness: no user exists with same email + companyId
+      const existingUser = await tx.user.findUnique({
+        where: { email: invite.invitedEmail },
+        include: {
+          employeeProfile: true,
+        },
+      });
+
+      if (existingUser) {
+        // Check if user already belongs to this company
+        if (existingUser.companyId === invite.companyId) {
+          throw new ConflictException(
+            'A user with this email already exists for this company',
+          );
+        }
+        // If user exists for different company, also conflict
+        if (existingUser.companyId) {
+          throw new ConflictException(
+            'A user with this email already exists for another company',
+          );
+        }
+      }
+
+      // 3) Create new User
+      const passwordHash = await bcrypt.hash(dto.password, 10);
+
+      const user = await tx.user.create({
+        data: {
+          email: invite.invitedEmail, // Email from invite (not editable)
+          passwordHash,
+          role: invite.role,
+          companyId: invite.companyId,
+          isActive: true,
+        },
+      });
+
+      // 4) Create EmployeeProfile (membership equivalent)
+      await tx.employeeProfile.create({
+        data: {
+          userId: user.id,
+          companyId: invite.companyId,
+          firstName: dto.firstName,
+          lastName: dto.lastName,
+        },
+      });
+
+      // 5) Mark invite ACCEPTED
+      await tx.employeeInvite.update({
+        where: { id: invite.id },
+        data: {
+          status: InviteStatus.ACCEPTED,
+          acceptedAt: now,
+        },
+      });
+
+      return { user, company: invite.company };
+    });
+
+    // 6) Issue JWT tokens
+    const tokens = await this.authService.issueTokens({
+      id: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      companyId: result.user.companyId ?? null,
+    });
+
+    // 7) Return response with tokens, user, and company
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+      },
+      company: {
+        id: result.company.id,
+        name: result.company.name,
+      },
     };
   }
 }
