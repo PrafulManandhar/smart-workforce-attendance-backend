@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as nodemailer from 'nodemailer';
 
 export interface EmployeeInviteEmailParams {
   toEmail: string;
@@ -11,6 +13,57 @@ export interface EmployeeInviteEmailParams {
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+
+  private transporter: nodemailer.Transporter | null = null;
+
+  constructor(private readonly configService: ConfigService) {}
+
+  /**
+   * Lazily create a nodemailer transport for non-production environments.
+   * In production, this returns null so that existing (stub) behaviour
+   * remains unchanged until a real provider is configured.
+   */
+  private getTransporter(): nodemailer.Transporter | null {
+    if (this.transporter) {
+      return this.transporter;
+    }
+
+    const nodeEnv = this.configService.get<string>('NODE_ENV') ?? 'development';
+
+    // Do not wire Mailtrap in production – keep production behaviour unchanged.
+    if (nodeEnv === 'production') {
+      return null;
+    }
+
+    // Prefer explicit SMTP_* env vars if present.
+    const host =
+      this.configService.get<string>('SMTP_HOST') ?? 'sandbox.smtp.mailtrap.io';
+    const portRaw =
+      this.configService.get<string>('SMTP_PORT') ?? '2525';
+    const user =
+      this.configService.get<string>('SMTP_USER') ?? '0c366749e2f562';
+    const pass =
+      this.configService.get<string>('SMTP_PASS') ?? '21616d661cd17b';
+
+    const port = Number(portRaw) || 2525;
+
+    // Mailtrap sandbox SMTP configuration for local development.
+    // Explicitly set `secure: false` (STARTTLS) and relaxed TLS to
+    // avoid connection issues in local/dev environments.
+    this.transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure: false,
+      auth: { user, pass },
+      tls: {
+        // In local environments certificates can be quirky; do not
+        // block the connection because of that.
+        rejectUnauthorized: false,
+      },
+    });
+
+    return this.transporter;
+  }
 
   /**
    * Stub for sending an employee invite email.
@@ -60,16 +113,44 @@ export class EmailService {
       `<p>Thanks,<br/>${company} Team</p>`,
     ].join('\n');
 
-    // Stub implementation: log to console / logger for now.
-    // Later, integrate with a real email provider here.
-    this.logger.log('[Email Stub] Sending employee invite email', {
+    // Always log a short preview for debugging.
+    this.logger.log('[Email] Prepared employee invite email', {
       toEmail,
       subject,
       textPreview: text.slice(0, 160),
     } as any);
 
-    // For unit/integration tests, it can be helpful to return or expose the
-    // prepared payload; for now we just log it.
+    // Attempt to send via Mailtrap / SMTP in non-production environments when configured.
+    try {
+      const transporter = this.getTransporter();
+
+      // If no transporter (e.g. production), keep existing behaviour: only log.
+      if (!transporter) {
+        return;
+      }
+
+      const fromAddress =
+        this.configService.get<string>('EMAIL_FROM') ??
+        'Smart Workforce Attendance <no-reply@smart-workforce.local>';
+
+      await transporter.sendMail({
+        from: fromAddress,
+        to: toEmail,
+        subject,
+        text,
+        html,
+      });
+
+      this.logger.log('[Email] Employee invite email sent successfully', {
+        toEmail,
+      } as any);
+    } catch (err: any) {
+      // Do not change business logic on failure – just log the error.
+      this.logger.error(
+        `Failed to send employee invite email to ${toEmail}`,
+        err?.stack ?? String(err),
+      );
+    }
   }
 }
 
