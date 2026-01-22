@@ -96,13 +96,14 @@ model Company {
 
   earlyCheckInMinutes Int? @default(30)
 
-  users           User[]
-  employees       EmployeeProfile[]
-  shifts          Shift[]
-  workLocations   WorkLocation[]
-  employeeInvites EmployeeInvite[]
-  auditLogs       AuditLog[]             @relation("CompanyAuditLogs")
-  availabilities  EmployeeAvailability[]
+  users            User[]
+  employees        EmployeeProfile[]
+  shifts           Shift[]
+  workLocations    WorkLocation[]
+  employeeInvites  EmployeeInvite[]
+  auditLogs        AuditLog[]               @relation("CompanyAuditLogs")
+  availabilities   EmployeeAvailability[]
+  unavailabilities EmployeeUnavailability[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -118,12 +119,13 @@ model User {
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id])
 
-  employeeProfile        EmployeeProfile?
-  createdEmployeeInvites EmployeeInvite[]
-  actorAuditLogs         AuditLog[]                     @relation("UserAuditLogs")
-  createdAvailabilities  EmployeeAvailability[]         @relation("AvailabilityCreatedBy")
-  updatedAvailabilities  EmployeeAvailability[]         @relation("AvailabilityUpdatedBy")
-  createdOverrides       EmployeeAvailabilityOverride[] @relation("OverrideCreatedBy")
+  employeeProfile         EmployeeProfile?
+  createdEmployeeInvites  EmployeeInvite[]
+  actorAuditLogs          AuditLog[]                     @relation("UserAuditLogs")
+  createdAvailabilities   EmployeeAvailability[]         @relation("AvailabilityCreatedBy")
+  updatedAvailabilities   EmployeeAvailability[]         @relation("AvailabilityUpdatedBy")
+  createdOverrides        EmployeeAvailabilityOverride[] @relation("OverrideCreatedBy")
+  createdUnavailabilities EmployeeUnavailability[]       @relation("UnavailabilityCreatedBy")
 
   hashedRefreshToken     String?
   resetPasswordTokenHash String?
@@ -210,6 +212,7 @@ model EmployeeProfile {
   shifts             Shift[]
   attendanceSessions AttendanceSession[]
   availabilities     EmployeeAvailability[]
+  unavailabilities   EmployeeUnavailability[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -355,4 +358,28 @@ model EmployeeAvailabilityOverride {
   @@unique([availabilityId, overrideDate])
   @@index([availabilityId])
   @@index([overrideDate])
+}
+
+model EmployeeUnavailability {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  date      DateTime // Date only (time component ignored)
+  startTime String? // HH:mm format, null means full-day unavailability
+  endTime   String? // HH:mm format, null means full-day unavailability
+  reason    String?
+
+  createdByUserId String?
+  createdByUser   User?   @relation("UnavailabilityCreatedBy", fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, companyId, date, startTime, endTime])
+  @@index([employeeId])
+  @@index([companyId])
+  @@index([date])
 }
