@@ -62,6 +62,16 @@ enum AuditEventType {
   INVITE_ACCEPTED
 }
 
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
 model Company {
   id       String  @id @default(cuid())
   name     String?
@@ -91,7 +101,8 @@ model Company {
   shifts          Shift[]
   workLocations   WorkLocation[]
   employeeInvites EmployeeInvite[]
-  auditLogs       AuditLog[]        @relation("CompanyAuditLogs")
+  auditLogs       AuditLog[]             @relation("CompanyAuditLogs")
+  availabilities  EmployeeAvailability[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -109,7 +120,10 @@ model User {
 
   employeeProfile        EmployeeProfile?
   createdEmployeeInvites EmployeeInvite[]
-  actorAuditLogs         AuditLog[]       @relation("UserAuditLogs")
+  actorAuditLogs         AuditLog[]                     @relation("UserAuditLogs")
+  createdAvailabilities  EmployeeAvailability[]         @relation("AvailabilityCreatedBy")
+  updatedAvailabilities  EmployeeAvailability[]         @relation("AvailabilityUpdatedBy")
+  createdOverrides       EmployeeAvailabilityOverride[] @relation("OverrideCreatedBy")
 
   hashedRefreshToken     String?
   resetPasswordTokenHash String?
@@ -195,6 +209,7 @@ model EmployeeProfile {
 
   shifts             Shift[]
   attendanceSessions AttendanceSession[]
+  availabilities     EmployeeAvailability[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -277,4 +292,67 @@ model LocationSnapshot {
   distanceMeters Float?
 
   createdAt DateTime @default(now())
+}
+
+model EmployeeAvailability {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  windows   EmployeeAvailabilityWindow[]
+  overrides EmployeeAvailabilityOverride[]
+
+  createdByUserId String?
+  createdByUser   User?   @relation("AvailabilityCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUserId String?
+  updatedByUser   User?   @relation("AvailabilityUpdatedBy", fields: [updatedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, companyId])
+  @@index([employeeId])
+  @@index([companyId])
+  @@index([effectiveFrom])
+  @@index([effectiveTo])
+}
+
+model EmployeeAvailabilityWindow {
+  id             String               @id @default(cuid())
+  availabilityId String
+  availability   EmployeeAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+  dayOfWeek      DayOfWeek
+  startTime      String // HH:mm format (e.g., "09:00")
+  endTime        String // HH:mm format (e.g., "17:00")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([availabilityId])
+  @@index([dayOfWeek])
+}
+
+model EmployeeAvailabilityOverride {
+  id             String               @id @default(cuid())
+  availabilityId String
+  availability   EmployeeAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+  overrideDate   DateTime // Specific date this override applies to
+  startTime      String? // HH:mm format, null means unavailable all day
+  endTime        String? // HH:mm format, null means unavailable all day
+  reason         String // Required reason for the override
+
+  createdByUserId String?
+  createdByUser   User?   @relation("OverrideCreatedBy", fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([availabilityId, overrideDate])
+  @@index([availabilityId])
+  @@index([overrideDate])
 }

@@ -4,10 +4,14 @@ import { CreateShiftDto } from './dtos/create-shift.dto';
 import { UpdateShiftDto } from './dtos/update-shift.dto';
 import { BulkCreateShiftDto } from './dtos/bulk-create-shift.dto';
 import { ShiftType } from '@prisma/client';
+import { AvailabilityConstraintService } from '../availability/services/availability-constraint.service';
 
 @Injectable()
 export class ShiftsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly availabilityConstraintService: AvailabilityConstraintService,
+  ) {}
 
   async create(companyId: string, createShiftDto: CreateShiftDto) {
     const {
@@ -79,6 +83,25 @@ export class ShiftsService {
     if (overlappingShift) {
       throw new ConflictException(
         `Shift overlaps with existing shift (ID: ${overlappingShift.id}) from ${overlappingShift.startAt} to ${overlappingShift.endAt}`,
+      );
+    }
+
+    // Check availability constraint
+    const shiftDate = new Date(startAt.getFullYear(), startAt.getMonth(), startAt.getDate());
+    const constraintResult = await this.availabilityConstraintService.checkAvailability(
+      employeeId,
+      companyId,
+      shiftDate,
+      startAt,
+      endAt,
+    );
+
+    // If shift is blocked by availability, require explicit override
+    // For now, we'll block the shift creation if it's outside availability
+    // In the future, this could be configurable per company
+    if (constraintResult.blocked) {
+      throw new BadRequestException(
+        `Shift falls outside employee availability. ${constraintResult.reason || 'Shift requires override.'}`,
       );
     }
 
