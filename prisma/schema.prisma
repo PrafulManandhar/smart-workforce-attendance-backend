@@ -62,6 +62,31 @@ enum AuditEventType {
   INVITE_ACCEPTED
 }
 
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum UnavailabilityRuleFrequency {
+  WEEKLY
+}
+
+enum UnavailabilityRuleStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum UnavailabilityExceptionType {
+  ADD
+  REMOVE
+  REPLACE
+}
+
 model Company {
   id       String  @id @default(cuid())
   name     String?
@@ -86,12 +111,15 @@ model Company {
 
   earlyCheckInMinutes Int? @default(30)
 
-  users           User[]
-  employees       EmployeeProfile[]
-  shifts          Shift[]
-  workLocations   WorkLocation[]
-  employeeInvites EmployeeInvite[]
-  auditLogs       AuditLog[]        @relation("CompanyAuditLogs")
+  users                    User[]
+  employees                EmployeeProfile[]
+  shifts                   Shift[]
+  workLocations            WorkLocation[]
+  employeeInvites          EmployeeInvite[]
+  auditLogs                AuditLog[]                        @relation("CompanyAuditLogs")
+  availabilities           EmployeeAvailability[]
+  unavailabilityRules      EmployeeUnavailabilityRule[]
+  unavailabilityExceptions EmployeeUnavailabilityException[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -107,9 +135,14 @@ model User {
   companyId String?
   company   Company? @relation(fields: [companyId], references: [id])
 
-  employeeProfile        EmployeeProfile?
-  createdEmployeeInvites EmployeeInvite[]
-  actorAuditLogs         AuditLog[]       @relation("UserAuditLogs")
+  employeeProfile                 EmployeeProfile?
+  createdEmployeeInvites          EmployeeInvite[]
+  actorAuditLogs                  AuditLog[]                        @relation("UserAuditLogs")
+  createdAvailabilities           EmployeeAvailability[]            @relation("AvailabilityCreatedBy")
+  updatedAvailabilities           EmployeeAvailability[]            @relation("AvailabilityUpdatedBy")
+  createdOverrides                EmployeeAvailabilityOverride[]    @relation("OverrideCreatedBy")
+  createdUnavailabilityRules      EmployeeUnavailabilityRule[]      @relation("UnavailabilityRuleCreatedBy")
+  createdUnavailabilityExceptions EmployeeUnavailabilityException[] @relation("UnavailabilityExceptionCreatedBy")
 
   hashedRefreshToken     String?
   resetPasswordTokenHash String?
@@ -193,8 +226,11 @@ model EmployeeProfile {
 
   managerId String?
 
-  shifts             Shift[]
-  attendanceSessions AttendanceSession[]
+  shifts                   Shift[]
+  attendanceSessions       AttendanceSession[]
+  availabilities           EmployeeAvailability[]
+  unavailabilityRules      EmployeeUnavailabilityRule[]
+  unavailabilityExceptions EmployeeUnavailabilityException[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -277,4 +313,125 @@ model LocationSnapshot {
   distanceMeters Float?
 
   createdAt DateTime @default(now())
+}
+
+model EmployeeAvailability {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+
+  windows   EmployeeAvailabilityWindow[]
+  overrides EmployeeAvailabilityOverride[]
+
+  createdByUserId String?
+  createdByUser   User?   @relation("AvailabilityCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUserId String?
+  updatedByUser   User?   @relation("AvailabilityUpdatedBy", fields: [updatedByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([employeeId, companyId])
+  @@index([employeeId])
+  @@index([companyId])
+  @@index([effectiveFrom])
+  @@index([effectiveTo])
+}
+
+model EmployeeAvailabilityWindow {
+  id             String               @id @default(cuid())
+  availabilityId String
+  availability   EmployeeAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+  dayOfWeek      DayOfWeek
+  startTime      String // HH:mm format (e.g., "09:00")
+  endTime        String // HH:mm format (e.g., "17:00")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([availabilityId])
+  @@index([dayOfWeek])
+}
+
+model EmployeeAvailabilityOverride {
+  id             String               @id @default(cuid())
+  availabilityId String
+  availability   EmployeeAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+  overrideDate   DateTime // Specific date this override applies to
+  startTime      String? // HH:mm format, null means unavailable all day
+  endTime        String? // HH:mm format, null means unavailable all day
+  reason         String // Required reason for the override
+
+  createdByUserId String?
+  createdByUser   User?   @relation("OverrideCreatedBy", fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([availabilityId, overrideDate])
+  @@index([availabilityId])
+  @@index([overrideDate])
+}
+
+model EmployeeUnavailabilityRule {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  timezone  String // e.g., "Australia/Sydney"
+  freq      UnavailabilityRuleFrequency @default(WEEKLY)
+  byweekday Int[] // Array of weekday numbers: 1=Mon, 2=Tue, ..., 7=Sun
+
+  allDay         Boolean
+  startTimeLocal String? // HH:mm format, nullable if allDay=true
+  endTimeLocal   String? // HH:mm format, nullable if allDay=true
+
+  effectiveFrom DateTime? // Date only (nullable)
+  effectiveTo   DateTime? // Date only (nullable)
+
+  status UnavailabilityRuleStatus @default(ACTIVE)
+  note   String?
+
+  createdByUserId String?
+  createdByUser   User?   @relation("UnavailabilityRuleCreatedBy", fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, status])
+  @@index([employeeId, effectiveFrom, effectiveTo])
+}
+
+model EmployeeUnavailabilityException {
+  id         String          @id @default(cuid())
+  employeeId String
+  employee   EmployeeProfile @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  companyId  String
+  company    Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  dateLocal DateTime // Date only (time component ignored)
+  timezone  String // e.g., "Australia/Sydney"
+
+  type UnavailabilityExceptionType
+
+  allDay         Boolean
+  startTimeLocal String? // HH:mm format, nullable if allDay=true
+  endTimeLocal   String? // HH:mm format, nullable if allDay=true
+
+  note String?
+
+  createdByUserId String?
+  createdByUser   User?   @relation("UnavailabilityExceptionCreatedBy", fields: [createdByUserId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([employeeId, dateLocal])
+  @@index([companyId, dateLocal])
 }

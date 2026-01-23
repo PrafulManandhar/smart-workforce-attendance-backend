@@ -9,6 +9,8 @@ import { AttendanceModule } from './attendance/attendance.module';
 import { WorkLocationsModule } from './work-locations/work-locations.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { InvitesModule } from './invites/invites.module';
+import { AvailabilityModule } from './availability/availability.module';
+import { UnavailabilityModule } from './unavailability/unavailability.module';
 import { TenantMiddleware } from './common/middleware/tenant.middleware';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { CompanyOnboardingGuard } from './common/guards/company-onboarding.guard';
@@ -25,6 +27,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     WorkLocationsModule,
     ShiftsModule,
     InvitesModule,
+    AvailabilityModule,
+    UnavailabilityModule,
   ],
   providers: [
     {
