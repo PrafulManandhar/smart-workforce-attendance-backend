@@ -1,14 +1,19 @@
 import {
   Controller,
   Post,
+  Get,
   Body,
+  Param,
+  Query,
   UseGuards,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
 import { UnavailabilityService } from './unavailability.service';
-import { CreateUnavailabilityDto } from './dtos/create-unavailability.dto';
-import { BulkCreateUnavailabilityDto } from './dtos/bulk-create-unavailability.dto';
+import { UnavailabilityResolverService } from './services/unavailability-resolver.service';
+import { CreateUnavailabilityRuleDto } from './dtos/create-unavailability-rule.dto';
+import { BulkCreateUnavailabilityRuleDto } from './dtos/bulk-create-unavailability-rule.dto';
+import { CreateUnavailabilityExceptionDto } from './dtos/create-unavailability-exception.dto';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -20,66 +25,51 @@ import {
   ApiResponse,
   ApiBody,
   ApiBearerAuth,
+  ApiParam,
+  ApiQuery,
 } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 
 @ApiTags('Unavailability')
 @ApiBearerAuth('access-token')
-@Controller('unavailability')
+@Controller('employee/unavailability')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class UnavailabilityController {
   constructor(
     private readonly unavailabilityService: UnavailabilityService,
+    private readonly resolverService: UnavailabilityResolverService,
     private readonly prisma: PrismaService,
   ) {}
 
-  @Post()
+  @Post('rules')
   @Roles(AppRole.EMPLOYEE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create a single unavailability entry',
+    summary: 'Create a single unavailability rule',
     description:
-      'Employees can create unavailability entries for themselves. If startTime and endTime are null, the employee is unavailable for the entire day. If provided, the employee is unavailable only during that time range. Unavailability acts as a hard scheduling constraint.',
+      'Employees can create recurring unavailability rules for themselves. Rules define weekly patterns (e.g., every Thursday all day, every Friday 16:00-22:00). Rules are expanded into date occurrences when queried.',
   })
-  @ApiBody({ type: CreateUnavailabilityDto })
+  @ApiBody({ type: CreateUnavailabilityRuleDto })
   @ApiResponse({
     status: 201,
-    description: 'Unavailability created successfully',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string' },
-        employeeId: { type: 'string' },
-        companyId: { type: 'string' },
-        date: { type: 'string', format: 'date-time' },
-        startTime: { type: 'string', nullable: true, example: '10:00' },
-        endTime: { type: 'string', nullable: true, example: '14:00' },
-        reason: { type: 'string', nullable: true },
-        createdAt: { type: 'string', format: 'date-time' },
-      },
-    },
+    description: 'Unavailability rule created successfully',
   })
   @ApiResponse({
     status: 400,
-    description: 'Validation error (invalid date, startTime >= endTime, etc.)',
+    description: 'Validation error (invalid timezone, missing times when allDay=false, etc.)',
   })
   @ApiResponse({
     status: 403,
-    description: 'Employee can only create unavailability for themselves',
+    description: 'Employee can only create unavailability rules for themselves',
   })
   @ApiResponse({
     status: 404,
     description: 'Employee not found',
   })
-  @ApiResponse({
-    status: 409,
-    description: 'Overlapping unavailability already exists for this date',
-  })
-  async create(
+  async createRule(
     @CurrentUser() user: { userId: string; companyId: string; role: AppRole },
-    @Body() dto: CreateUnavailabilityDto,
+    @Body() dto: CreateUnavailabilityRuleDto,
   ) {
-    // Get employee profile for current user
     const employeeProfile = await this.prisma.employeeProfile.findUnique({
       where: { userId: user.userId },
     });
@@ -88,7 +78,7 @@ export class UnavailabilityController {
       throw new Error('Employee profile not found for user');
     }
 
-    return this.unavailabilityService.create(
+    return this.unavailabilityService.createRule(
       employeeProfile.id,
       user.companyId,
       user.userId,
@@ -97,57 +87,35 @@ export class UnavailabilityController {
     );
   }
 
-  @Post('bulk')
+  @Post('rules/bulk')
   @Roles(AppRole.EMPLOYEE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: 'Create multiple unavailability entries in bulk',
+    summary: 'Create multiple unavailability rules in bulk',
     description:
-      'Employees can create multiple unavailability entries in a single request. All entries are created in a transaction - if any entry fails validation, the entire operation is rolled back. Duplicate entries in the payload are rejected. Overlapping entries are rejected.',
+      'Employees can create multiple unavailability rules in a single request. All rules are created in a transaction - if any rule fails validation, the entire operation is rolled back.',
   })
-  @ApiBody({ type: BulkCreateUnavailabilityDto })
+  @ApiBody({ type: BulkCreateUnavailabilityRuleDto })
   @ApiResponse({
     status: 201,
-    description: 'All unavailability entries created successfully',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          employeeId: { type: 'string' },
-          companyId: { type: 'string' },
-          date: { type: 'string', format: 'date-time' },
-          startTime: { type: 'string', nullable: true },
-          endTime: { type: 'string', nullable: true },
-          reason: { type: 'string', nullable: true },
-          createdAt: { type: 'string', format: 'date-time' },
-        },
-      },
-    },
+    description: 'All unavailability rules created successfully',
   })
   @ApiResponse({
     status: 400,
-    description:
-      'Validation error (duplicates in payload, overlapping entries, invalid times, etc.)',
+    description: 'Validation error (invalid rules, etc.)',
   })
   @ApiResponse({
     status: 403,
-    description: 'Employee can only create unavailability for themselves',
+    description: 'Employee can only create unavailability rules for themselves',
   })
   @ApiResponse({
     status: 404,
     description: 'Employee not found',
   })
-  @ApiResponse({
-    status: 409,
-    description: 'One or more entries overlap with existing unavailability',
-  })
-  async bulkCreate(
+  async bulkCreateRules(
     @CurrentUser() user: { userId: string; companyId: string; role: AppRole },
-    @Body() bulkDto: BulkCreateUnavailabilityDto,
+    @Body() bulkDto: BulkCreateUnavailabilityRuleDto,
   ) {
-    // Get employee profile for current user
     const employeeProfile = await this.prisma.employeeProfile.findUnique({
       where: { userId: user.userId },
     });
@@ -156,12 +124,58 @@ export class UnavailabilityController {
       throw new Error('Employee profile not found for user');
     }
 
-    return this.unavailabilityService.bulkCreate(
+    return this.unavailabilityService.bulkCreateRules(
       employeeProfile.id,
       user.companyId,
       user.userId,
       user.role,
-      bulkDto.unavailabilities,
+      bulkDto.rules,
+    );
+  }
+
+  @Post('exceptions')
+  @Roles(AppRole.EMPLOYEE)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create a single unavailability exception',
+    description:
+      'Employees can create date-specific exceptions for holidays, swaps, or special cases. Exceptions override rules: ADD (add extra unavailability), REMOVE (make available despite rule), REPLACE (replace rule window for that date).',
+  })
+  @ApiBody({ type: CreateUnavailabilityExceptionDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Unavailability exception created successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error (invalid date, missing times when allDay=false, etc.)',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Employee can only create unavailability exceptions for themselves',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Employee not found',
+  })
+  async createException(
+    @CurrentUser() user: { userId: string; companyId: string; role: AppRole },
+    @Body() dto: CreateUnavailabilityExceptionDto,
+  ) {
+    const employeeProfile = await this.prisma.employeeProfile.findUnique({
+      where: { userId: user.userId },
+    });
+
+    if (!employeeProfile) {
+      throw new Error('Employee profile not found for user');
+    }
+
+    return this.unavailabilityService.createException(
+      employeeProfile.id,
+      user.companyId,
+      user.userId,
+      user.role,
+      dto,
     );
   }
 }

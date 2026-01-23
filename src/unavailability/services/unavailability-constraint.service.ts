@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { UnavailabilityResolverService } from './unavailability-resolver.service';
 
 export interface UnavailabilityConstraintResult {
   blocked: boolean;
@@ -9,20 +9,21 @@ export interface UnavailabilityConstraintResult {
 
 /**
  * Reusable service for checking if a shift is blocked by employee unavailability.
- * This service is stateless and designed as a read-only hook for future integration.
- * 
+ * This service uses the UnavailabilityResolverService to resolve rules and exceptions,
+ * then checks if the shift overlaps with any blocked time windows.
+ *
  * ⚠️ This service does NOT modify shift creation logic directly.
  * It only exposes the constraint check for future integration.
  */
 @Injectable()
 export class UnavailabilityConstraintService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly resolverService: UnavailabilityResolverService) {}
 
   /**
    * Check if a shift is blocked by employee unavailability.
    *
    * @param employeeId - Employee profile ID
-   * @param companyId - Company ID
+   * @param companyId - Company ID (not used in resolver, but kept for API consistency)
    * @param date - Date of the shift
    * @param shiftStartTime - Start time of the shift (Date object)
    * @param shiftEndTime - End time of the shift (Date object)
@@ -35,56 +36,38 @@ export class UnavailabilityConstraintService {
     shiftStartTime: Date,
     shiftEndTime: Date,
   ): Promise<UnavailabilityConstraintResult> {
-    // Normalize date to start of day for comparison
-    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+    // Normalize date to start of day
+    const dateOnly = this.startOfDay(date);
     const nextDay = new Date(dateOnly);
     nextDay.setDate(nextDay.getDate() + 1);
 
-    // Find unavailability records for this employee, company, and date
-    const unavailabilities = await this.prisma.employeeUnavailability.findMany({
-      where: {
-        employeeId,
-        companyId,
-        date: {
-          gte: dateOnly,
-          lt: nextDay,
-        },
-      },
-    });
+    // Resolve unavailability for this date
+    const resolved = await this.resolverService.resolveUnavailability(
+      employeeId,
+      dateOnly,
+      this.startOfDay(new Date(nextDay.getTime() - 1)), // End of day
+    );
 
-    // If no unavailability records, allow
-    if (unavailabilities.length === 0) {
+    // Find unavailability for this specific date
+    const dateKey = this.dateKey(dateOnly);
+    const dayUnavailability = resolved.find((item) => this.dateKey(item.date) === dateKey);
+
+    if (!dayUnavailability || dayUnavailability.windows.length === 0) {
       return {
         blocked: false,
         allowed: true,
       };
     }
 
-    // Check each unavailability record
-    for (const unavailability of unavailabilities) {
-      // Full-day unavailability (both startTime and endTime are null)
-      if (unavailability.startTime === null && unavailability.endTime === null) {
+    // Check if shift overlaps with any blocked windows
+    for (const window of dayUnavailability.windows) {
+      // Overlap occurs if: shiftStartTime < window.end && shiftEndTime > window.start
+      if (shiftStartTime < window.end && shiftEndTime > window.start) {
         return {
           blocked: true,
           allowed: false,
-          reason: unavailability.reason || 'Full-day unavailability',
+          reason: 'Unavailable during this time',
         };
-      }
-
-      // Partial-day unavailability - check if shift overlaps
-      if (unavailability.startTime && unavailability.endTime) {
-        const unavailStart = this.parseTime(unavailability.startTime, date);
-        const unavailEnd = this.parseTime(unavailability.endTime, date);
-
-        // Check if shift overlaps with unavailability window
-        // Overlap occurs if: shiftStartTime < unavailEnd && shiftEndTime > unavailStart
-        if (shiftStartTime < unavailEnd && shiftEndTime > unavailStart) {
-          return {
-            blocked: true,
-            allowed: false,
-            reason: unavailability.reason || 'Time-based unavailability',
-          };
-        }
       }
     }
 
@@ -96,12 +79,21 @@ export class UnavailabilityConstraintService {
   }
 
   /**
-   * Parse time string (HH:mm) to Date on a specific date
+   * Get start of day for a date.
    */
-  private parseTime(timeString: string, date: Date): Date {
-    const [hours, minutes] = timeString.split(':').map(Number);
+  private startOfDay(date: Date): Date {
     const result = new Date(date);
-    result.setHours(hours, minutes, 0, 0);
+    result.setHours(0, 0, 0, 0);
     return result;
+  }
+
+  /**
+   * Get date key for comparison (YYYY-MM-DD).
+   */
+  private dateKey(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

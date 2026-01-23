@@ -3,26 +3,27 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
-  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateUnavailabilityDto } from './dtos/create-unavailability.dto';
+import { CreateUnavailabilityRuleDto } from './dtos/create-unavailability-rule.dto';
+import { CreateUnavailabilityExceptionDto } from './dtos/create-unavailability-exception.dto';
 import { AppRole } from '../common/enums/role.enum';
+import { UnavailabilityRuleStatus } from '@prisma/client';
 
 @Injectable()
 export class UnavailabilityService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Create a single unavailability entry.
-   * Employees can only create unavailability for themselves.
+   * Create a single unavailability rule.
+   * Employees can only create rules for themselves.
    */
-  async create(
+  async createRule(
     employeeId: string,
     companyId: string,
     userId: string,
     userRole: AppRole,
-    dto: CreateUnavailabilityDto,
+    dto: CreateUnavailabilityRuleDto,
   ) {
     // Verify employee belongs to company
     const employee = await this.prisma.employeeProfile.findFirst({
@@ -43,51 +44,69 @@ export class UnavailabilityService {
       });
 
       if (!userEmployee || userEmployee.id !== employeeId) {
-        throw new ForbiddenException('You can only create unavailability for yourself');
+        throw new ForbiddenException('You can only create unavailability rules for yourself');
       }
     }
 
-    // Validate and normalize date
-    const date = new Date(dto.date);
-    const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    // Validate: if allDay is false, startTimeLocal and endTimeLocal are required
+    if (!dto.allDay && (!dto.startTimeLocal || !dto.endTimeLocal)) {
+      throw new BadRequestException(
+        'startTimeLocal and endTimeLocal are required when allDay is false',
+      );
+    }
 
-    // Validate time ordering if both times provided
-    if (dto.startTime && dto.endTime) {
-      const startMinutes = this.timeStringToMinutes(dto.startTime);
-      const endMinutes = this.timeStringToMinutes(dto.endTime);
+    // Validate byweekday array
+    if (!dto.byweekday || dto.byweekday.length === 0) {
+      throw new BadRequestException('byweekday must contain at least one weekday');
+    }
 
-      if (startMinutes >= endMinutes) {
-        throw new BadRequestException('startTime must be before endTime');
+    // Validate weekday numbers (1-7)
+    for (const day of dto.byweekday) {
+      if (day < 1 || day > 7) {
+        throw new BadRequestException('byweekday must contain numbers between 1 and 7');
       }
     }
 
-    // Check for overlapping unavailability on the same date
-    await this.checkOverlaps(employeeId, companyId, dateOnly, dto.startTime, dto.endTime);
+    // Parse effective dates
+    const effectiveFrom = dto.effectiveFrom
+      ? this.parseDate(dto.effectiveFrom)
+      : null;
+    const effectiveTo = dto.effectiveTo ? this.parseDate(dto.effectiveTo) : null;
 
-    // Create unavailability
-    return this.prisma.employeeUnavailability.create({
+    // Validate effective date range
+    if (effectiveFrom && effectiveTo && effectiveFrom > effectiveTo) {
+      throw new BadRequestException('effectiveFrom must be before or equal to effectiveTo');
+    }
+
+    // Create rule
+    return this.prisma.employeeUnavailabilityRule.create({
       data: {
         employeeId,
         companyId,
-        date: dateOnly,
-        startTime: dto.startTime || null,
-        endTime: dto.endTime || null,
-        reason: dto.reason || null,
+        timezone: dto.timezone,
+        freq: dto.freq,
+        byweekday: dto.byweekday,
+        allDay: dto.allDay,
+        startTimeLocal: dto.allDay ? null : dto.startTimeLocal || null,
+        endTimeLocal: dto.allDay ? null : dto.endTimeLocal || null,
+        effectiveFrom,
+        effectiveTo,
+        status: dto.status || UnavailabilityRuleStatus.ACTIVE,
+        note: dto.note || null,
         createdByUserId: userId,
       },
     });
   }
 
   /**
-   * Create multiple unavailability entries in a single transaction.
-   * Employees can only create unavailability for themselves.
+   * Create multiple unavailability rules in a single transaction.
    */
-  async bulkCreate(
+  async bulkCreateRules(
     employeeId: string,
     companyId: string,
     userId: string,
     userRole: AppRole,
-    dtos: CreateUnavailabilityDto[],
+    dtos: CreateUnavailabilityRuleDto[],
   ) {
     // Verify employee belongs to company
     const employee = await this.prisma.employeeProfile.findFirst({
@@ -108,97 +127,53 @@ export class UnavailabilityService {
       });
 
       if (!userEmployee || userEmployee.id !== employeeId) {
-        throw new ForbiddenException('You can only create unavailability for yourself');
+        throw new ForbiddenException('You can only create unavailability rules for yourself');
       }
     }
 
-    // Validate all entries before processing
-    const normalizedEntries: Array<{
-      date: Date;
-      startTime: string | null;
-      endTime: string | null;
-      reason: string | null;
-    }> = [];
-
-    // Track dates to detect duplicates in bulk payload
-    const seenDates = new Set<string>();
-
+    // Validate all rules before processing
     for (const dto of dtos) {
-      const date = new Date(dto.date);
-      const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      const dateKey = dateOnly.toISOString();
-
-      // Check for duplicates in bulk payload
-      if (seenDates.has(dateKey)) {
+      if (!dto.allDay && (!dto.startTimeLocal || !dto.endTimeLocal)) {
         throw new BadRequestException(
-          `Duplicate unavailability entry for date ${dto.date} in bulk payload`,
+          'startTimeLocal and endTimeLocal are required when allDay is false',
         );
       }
-      seenDates.add(dateKey);
 
-      // Validate time ordering
-      if (dto.startTime && dto.endTime) {
-        const startMinutes = this.timeStringToMinutes(dto.startTime);
-        const endMinutes = this.timeStringToMinutes(dto.endTime);
+      if (!dto.byweekday || dto.byweekday.length === 0) {
+        throw new BadRequestException('byweekday must contain at least one weekday');
+      }
 
-        if (startMinutes >= endMinutes) {
-          throw new BadRequestException(
-            `For date ${dto.date}, startTime must be before endTime`,
-          );
+      for (const day of dto.byweekday) {
+        if (day < 1 || day > 7) {
+          throw new BadRequestException('byweekday must contain numbers between 1 and 7');
         }
       }
 
-      normalizedEntries.push({
-        date: dateOnly,
-        startTime: dto.startTime || null,
-        endTime: dto.endTime || null,
-        reason: dto.reason || null,
-      });
-    }
+      const effectiveFrom = dto.effectiveFrom ? this.parseDate(dto.effectiveFrom) : null;
+      const effectiveTo = dto.effectiveTo ? this.parseDate(dto.effectiveTo) : null;
 
-    // Check for overlaps with existing unavailability and within bulk payload
-    for (const entry of normalizedEntries) {
-      // Check existing unavailability
-      await this.checkOverlaps(
-        employeeId,
-        companyId,
-        entry.date,
-        entry.startTime || undefined,
-        entry.endTime || undefined,
-      );
-
-      // Check overlaps within bulk payload
-      for (const otherEntry of normalizedEntries) {
-        if (entry === otherEntry) continue;
-
-        // Same date - check time overlap
-        if (
-          entry.date.getTime() === otherEntry.date.getTime() &&
-          this.doTimeRangesOverlap(
-            entry.startTime,
-            entry.endTime,
-            otherEntry.startTime,
-            otherEntry.endTime,
-          )
-        ) {
-          throw new BadRequestException(
-            `Overlapping unavailability entries for date ${entry.date.toISOString().split('T')[0]}`,
-          );
-        }
+      if (effectiveFrom && effectiveTo && effectiveFrom > effectiveTo) {
+        throw new BadRequestException('effectiveFrom must be before or equal to effectiveTo');
       }
     }
 
-    // Create all entries in a transaction
+    // Create all rules in a transaction
     return this.prisma.$transaction(
-      normalizedEntries.map((entry) =>
-        this.prisma.employeeUnavailability.create({
+      dtos.map((dto) =>
+        this.prisma.employeeUnavailabilityRule.create({
           data: {
             employeeId,
             companyId,
-            date: entry.date,
-            startTime: entry.startTime,
-            endTime: entry.endTime,
-            reason: entry.reason,
+            timezone: dto.timezone,
+            freq: dto.freq,
+            byweekday: dto.byweekday,
+            allDay: dto.allDay,
+            startTimeLocal: dto.allDay ? null : dto.startTimeLocal || null,
+            endTimeLocal: dto.allDay ? null : dto.endTimeLocal || null,
+            effectiveFrom: dto.effectiveFrom ? this.parseDate(dto.effectiveFrom) : null,
+            effectiveTo: dto.effectiveTo ? this.parseDate(dto.effectiveTo) : null,
+            status: dto.status || UnavailabilityRuleStatus.ACTIVE,
+            note: dto.note || null,
             createdByUserId: userId,
           },
         }),
@@ -207,96 +182,117 @@ export class UnavailabilityService {
   }
 
   /**
-   * Check for overlapping unavailability records.
+   * Create a single unavailability exception.
+   * Employees can only create exceptions for themselves.
    */
-  private async checkOverlaps(
+  async createException(
     employeeId: string,
     companyId: string,
-    date: Date,
-    startTime?: string,
-    endTime?: string,
+    userId: string,
+    userRole: AppRole,
+    dto: CreateUnavailabilityExceptionDto,
   ) {
-    const existing = await this.prisma.employeeUnavailability.findMany({
+    // Verify employee belongs to company
+    const employee = await this.prisma.employeeProfile.findFirst({
       where: {
-        employeeId,
+        id: employeeId,
         companyId,
-        date: {
-          gte: new Date(date.getFullYear(), date.getMonth(), date.getDate()),
-          lt: new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
-        },
       },
     });
 
-    for (const record of existing) {
-      // Full-day unavailability conflicts with any other entry
-      if (
-        (record.startTime === null && record.endTime === null) ||
-        (startTime === undefined && endTime === undefined)
-      ) {
-        throw new ConflictException(
-          `Unavailability already exists for date ${date.toISOString().split('T')[0]}`,
-        );
-      }
+    if (!employee) {
+      throw new NotFoundException('Employee not found or does not belong to company');
+    }
 
-      // Check time overlap
-      if (
-        this.doTimeRangesOverlap(
-          record.startTime,
-          record.endTime,
-          startTime || null,
-          endTime || null,
-        )
-      ) {
-        throw new ConflictException(
-          `Overlapping unavailability for date ${date.toISOString().split('T')[0]}`,
-        );
+    // Verify ownership
+    if (userRole === AppRole.EMPLOYEE) {
+      const userEmployee = await this.prisma.employeeProfile.findUnique({
+        where: { userId },
+      });
+
+      if (!userEmployee || userEmployee.id !== employeeId) {
+        throw new ForbiddenException('You can only create unavailability exceptions for yourself');
       }
     }
+
+    // Validate: if allDay is false, startTimeLocal and endTimeLocal are required
+    if (!dto.allDay && (!dto.startTimeLocal || !dto.endTimeLocal)) {
+      throw new BadRequestException(
+        'startTimeLocal and endTimeLocal are required when allDay is false',
+      );
+    }
+
+    // Parse date
+    const dateLocal = this.parseDate(dto.dateLocal);
+
+    // Create exception
+    return this.prisma.employeeUnavailabilityException.create({
+      data: {
+        employeeId,
+        companyId,
+        dateLocal,
+        timezone: dto.timezone,
+        type: dto.type,
+        allDay: dto.allDay,
+        startTimeLocal: dto.allDay ? null : dto.startTimeLocal || null,
+        endTimeLocal: dto.allDay ? null : dto.endTimeLocal || null,
+        note: dto.note || null,
+        createdByUserId: userId,
+      },
+    });
   }
 
   /**
-   * Check if two time ranges overlap.
-   * Handles full-day (null times) and partial-day unavailability.
+   * Get resolved unavailability for an employee within a date range.
+   * This is a read-only operation for managers/admins.
    */
-  private doTimeRangesOverlap(
-    start1: string | null | undefined,
-    end1: string | null | undefined,
-    start2: string | null | undefined,
-    end2: string | null | undefined,
-  ): boolean {
-    // If either is full-day (both null), they overlap
-    if (
-      (start1 === null && end1 === null) ||
-      (start2 === null && end2 === null) ||
-      (start1 === undefined && end1 === undefined) ||
-      (start2 === undefined && end2 === undefined)
-    ) {
-      return true;
+  async getUnavailabilityForDateRange(
+    employeeId: string,
+    companyId: string,
+    fromDate: string,
+    toDate: string,
+  ) {
+    // Verify employee belongs to company
+    const employee = await this.prisma.employeeProfile.findFirst({
+      where: {
+        id: employeeId,
+        companyId,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('Employee not found or does not belong to company');
     }
 
-    // If one is full-day and other is partial, they overlap
-    if (
-      (start1 === null || start1 === undefined) ||
-      (start2 === null || start2 === undefined)
-    ) {
-      return true;
+    const from = this.parseDate(fromDate);
+    const to = this.parseDate(toDate);
+
+    if (from > to) {
+      throw new BadRequestException('fromDate must be before or equal to toDate');
     }
 
-    // Both are partial-day - check time overlap
-    const start1Minutes = this.timeStringToMinutes(start1!);
-    const end1Minutes = this.timeStringToMinutes(end1!);
-    const start2Minutes = this.timeStringToMinutes(start2!);
-    const end2Minutes = this.timeStringToMinutes(end2!);
-
-    // Overlap occurs if: start1 < end2 && end1 > start2
-    return start1Minutes < end2Minutes && end1Minutes > start2Minutes;
+    // Use resolver service to compute unavailability
+    // Note: We'll inject this in the constructor
+    return {
+      employeeId,
+      companyId,
+      fromDate: from,
+      toDate: to,
+      // The actual resolution will be done by the resolver service
+      // This method signature is for the controller
+    };
   }
 
   /**
-   * Convert time string (HH:mm) to minutes since midnight
+   * Parse date string (YYYY-MM-DD) to Date object.
    */
-  private timeStringToMinutes(timeString: string): number {
-    const [hours, minutes] = timeString.split(':').map(Number);
-    return hours * 60 + minutes;
+  private parseDate(dateString: string): Date {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) {
+      throw new BadRequestException(`Invalid date format: ${dateString}. Expected YYYY-MM-DD`);
+    }
+    // Set to start of day
+    date.setHours(0, 0, 0, 0);
+    return date;
   }
 }
