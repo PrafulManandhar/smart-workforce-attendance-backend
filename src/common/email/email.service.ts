@@ -10,6 +10,13 @@ export interface EmployeeInviteEmailParams {
   expiresAt: Date;
 }
 
+export interface CompanySignupOtpEmailParams {
+  toEmail: string;
+  companyName?: string | null;
+  otp: string;
+  expiresAt: Date;
+}
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -148,6 +155,75 @@ export class EmailService {
       // Do not change business logic on failure – just log the error.
       this.logger.error(
         `Failed to send employee invite email to ${toEmail}`,
+        err?.stack ?? String(err),
+      );
+    }
+  }
+
+  /**
+   * Send OTP email for company signup verification.
+   */
+  async sendCompanySignupOtpEmail(params: CompanySignupOtpEmailParams): Promise<void> {
+    const { toEmail, companyName, otp, expiresAt } = params;
+
+    const company = companyName ?? 'your company';
+    const subject = 'Verify your company email';
+    const expiryText = expiresAt.toUTCString();
+
+    const text = [
+      `Hi,`,
+      ``,
+      `To verify the email address for ${company}, use the following one-time code:`,
+      ``,
+      `  ${otp}`,
+      ``,
+      `This code will expire on ${expiryText}.`,
+      ``,
+      `If you didn't request this, you can safely ignore this email.`,
+      ``,
+      `Thanks,`,
+      `Smart Workforce Attendance`,
+    ].join('\n');
+
+    const html = [
+      `<p>Hi,</p>`,
+      `<p>To verify the email address for <strong>${company}</strong>, use the following one-time code:</p>`,
+      `<p style="font-size:24px;letter-spacing:4px;"><strong>${otp}</strong></p>`,
+      `<p>This code will expire on <strong>${expiryText}</strong>.</p>`,
+      `<p>If you didn't request this, you can safely ignore this email.</p>`,
+      `<p>Thanks,<br/>Smart Workforce Attendance</p>`,
+    ].join('\n');
+
+    this.logger.log('[Email] Prepared company signup OTP email', {
+      toEmail,
+      subject,
+      textPreview: text.slice(0, 160),
+    } as any);
+
+    try {
+      const transporter = this.getTransporter();
+      if (!transporter) {
+        return;
+      }
+
+      const fromAddress =
+        this.configService.get<string>('EMAIL_FROM') ??
+        'Smart Workforce Attendance <no-reply@smart-workforce.local>';
+
+      await transporter.sendMail({
+        from: fromAddress,
+        to: toEmail,
+        subject,
+        text,
+        html,
+      });
+
+      this.logger.log('[Email] Company signup OTP email sent successfully', {
+        toEmail,
+      } as any);
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to send company signup OTP email to ${toEmail}`,
         err?.stack ?? String(err),
       );
     }
