@@ -10,6 +10,7 @@ import { ApiBearerAuth, ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagg
 import { CompanySignupDto } from './dtos/company-signup.dto';
 import { CompanyOnboardingDto } from './dtos/company-onboarding.dto';
 import { CompanyOptOutDto } from './dtos/company-opt-out.dto';
+import { VerifyCompanyEmailOtpDto } from './dtos/verify-company-email-otp.dto';
 
 @ApiTags('Companies')
 @ApiBearerAuth('access-token') 
@@ -20,11 +21,39 @@ export class CompaniesController {
 
   @Post('signup')
   @Public()
-  @ApiOperation({ summary: 'Company signup - Create company and admin user' })
-  @ApiResponse({ status: 201, description: 'Company and user created successfully' })
+  @ApiOperation({
+    summary: 'Company signup - Create DRAFT company and send email OTP',
+    description:
+      'Creates a DRAFT company and sends a 6-digit OTP to the provided email. The company remains inactive until the OTP is verified.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'OTP sent to company email and company created in DRAFT status',
+  })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   signup(@Body() dto: CompanySignupDto) {
     return this.companiesService.signup(dto);
+  }
+
+  @Post('verify-email-otp')
+  @Public()
+  @ApiOperation({
+    summary: 'Verify company email OTP',
+    description:
+      'Verifies the 6-digit OTP for a company. On success, marks the OTP as verified and activates the company.',
+  })
+  @ApiResponse({ status: 200, description: 'Company email verified successfully' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid or expired OTP, or company already verified',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Maximum OTP attempts exceeded',
+  })
+  @ApiResponse({ status: 404, description: 'OTP not found for this company' })
+  verifyEmailOtp(@Body() dto: VerifyCompanyEmailOtpDto) {
+    return this.companiesService.verifyEmailOtp(dto);
   }
 
   @Get()
