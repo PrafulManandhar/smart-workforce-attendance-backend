@@ -458,10 +458,12 @@ model CompanyEmailOtp {
   companyId String   @unique
   company   Company  @relation(fields: [companyId], references: [id])
 
-  otpHash   String
-  expiresAt DateTime
-  attempts  Int      @default(0)
-  verifiedAt DateTime?
+  email        String?
+  passwordHash String?
+  otpHash      String
+  expiresAt    DateTime
+  attempts     Int      @default(0)
+  verifiedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

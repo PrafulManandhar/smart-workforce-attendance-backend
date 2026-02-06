@@ -95,6 +95,8 @@ export class CompaniesService {
       await tx.companyEmailOtp.upsert({
         where: { companyId: company.id },
         update: {
+          email: dto.email,
+          passwordHash,
           otpHash,
           expiresAt,
           attempts: 0,
@@ -102,6 +104,8 @@ export class CompaniesService {
         },
         create: {
           companyId: company.id,
+          email: dto.email,
+          passwordHash,
           otpHash,
           expiresAt,
         },
@@ -164,7 +168,17 @@ export class CompaniesService {
       throw new BadRequestException('Invalid OTP');
     }
 
-    await this.prisma.$transaction(async (tx) => {
+    if (!otpRecord.email || !otpRecord.passwordHash) {
+      throw new BadRequestException('Signup data incomplete. Please signup again.');
+    }
+
+    // Store non-null values after validation
+    const email = otpRecord.email;
+    const passwordHash = otpRecord.passwordHash;
+
+    // Verify OTP, create user, activate company, and generate tokens in a transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Mark OTP as verified
       await tx.companyEmailOtp.update({
         where: { companyId: dto.companyId },
         data: {
@@ -173,18 +187,57 @@ export class CompaniesService {
         },
       });
 
-      await tx.company.update({
+      // Activate company
+      const company = await tx.company.update({
         where: { id: dto.companyId },
         data: {
-          // There is no plain ACTIVE status; use ACTIVE_TRIAL as the "active" state.
           status: 'ACTIVE_TRIAL' as CompanyStatusType,
           onboardingCompletedAt: now,
         } as any,
       });
+
+      // Create admin user if it doesn't exist
+      let user = await tx.user.findUnique({
+        where: { email },
+      });
+
+      if (!user) {
+        user = await tx.user.create({
+          data: {
+            email,
+            passwordHash,
+            role: AppRole.COMPANY_ADMIN as any,
+            companyId: dto.companyId,
+            isActive: true,
+          },
+        });
+      }
+
+      return { company, user };
     });
+
+    // Generate auth tokens using AuthService
+    const tokens = await this.authService.issueTokens({
+      id: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+      companyId: result.user.companyId ?? null,
+    });
+
+    // Fetch company details
+    const companyFull = result.company as unknown as CompanyWithAllFields;
 
     return {
       message: 'Company email verified successfully',
+      token: tokens.accessToken,
+      company: {
+        id: result.company.id,
+        name: result.company.name,
+        email: result.user.email,
+        username: result.user.email, // Using email as username
+        status: companyFull.status.toLowerCase(),
+        created_at: result.company.createdAt,
+      },
     };
   }
 

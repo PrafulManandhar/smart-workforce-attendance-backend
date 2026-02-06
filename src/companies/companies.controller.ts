@@ -11,6 +11,7 @@ import { CompanySignupDto } from './dtos/company-signup.dto';
 import { CompanyOnboardingDto } from './dtos/company-onboarding.dto';
 import { CompanyOptOutDto } from './dtos/company-opt-out.dto';
 import { VerifyCompanyEmailOtpDto } from './dtos/verify-company-email-otp.dto';
+import { VerifyCompanyEmailOtpResponseDto } from './dtos/verify-company-email-otp-response.dto';
 
 @ApiTags('Companies')
 @ApiBearerAuth('access-token') 
@@ -40,12 +41,16 @@ export class CompaniesController {
   @ApiOperation({
     summary: 'Verify company email OTP',
     description:
-      'Verifies the 6-digit OTP for a company. On success, marks the OTP as verified and activates the company.',
+      'Verifies the 6-digit OTP for a company. On success, marks the OTP as verified, activates the company, creates admin user, and returns authentication token with company details.',
   })
-  @ApiResponse({ status: 200, description: 'Company email verified successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Company email verified successfully. Returns auth token and company info.',
+    type: VerifyCompanyEmailOtpResponseDto,
+  })
   @ApiResponse({
     status: 400,
-    description: 'Invalid or expired OTP, or company already verified',
+    description: 'Invalid or expired OTP, company already verified, or signup data incomplete',
   })
   @ApiResponse({
     status: 403,
