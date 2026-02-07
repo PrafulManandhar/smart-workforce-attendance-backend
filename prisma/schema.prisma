@@ -87,6 +87,11 @@ enum UnavailabilityExceptionType {
   REPLACE
 }
 
+enum DepartmentStatus {
+  ACTIVE
+  INACTIVE
+}
+
 model Company {
   id       String  @id @default(cuid())
   name     String?
@@ -120,6 +125,7 @@ model Company {
   availabilities           EmployeeAvailability[]
   unavailabilityRules      EmployeeUnavailabilityRule[]
   unavailabilityExceptions EmployeeUnavailabilityException[]
+  departments              Department[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -260,6 +266,8 @@ model Shift {
   company            Company         @relation(fields: [companyId], references: [id])
   workLocationId     String?
   workLocation       WorkLocation?   @relation(fields: [workLocationId], references: [id])
+  departmentId       String?
+  department         Department?     @relation(fields: [departmentId], references: [id])
   startAt            DateTime
   endAt              DateTime
   type               ShiftType
@@ -434,4 +442,22 @@ model EmployeeUnavailabilityException {
 
   @@index([employeeId, dateLocal])
   @@index([companyId, dateLocal])
+}
+
+model Department {
+  id          String          @id @default(cuid())
+  companyId   String
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      DepartmentStatus @default(ACTIVE)
+
+  shifts Shift[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([companyId, status])
 }
