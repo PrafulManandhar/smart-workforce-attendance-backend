@@ -9,6 +9,11 @@ export class CreateShiftDto {
   @IsNotEmpty()
   employeeId!: string;
 
+  @ApiProperty({ example: 'clxdept123456', description: 'Department ID (required)' })
+  @IsString()
+  @IsNotEmpty()
+  departmentId!: string;
+
   @ApiPropertyOptional({ example: 'clx0987654321', description: 'Work location ID' })
   @IsString()
   @IsOptional()
