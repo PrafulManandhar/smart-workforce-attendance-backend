@@ -12,6 +12,9 @@ declare module 'nodemailer' {
       rejectUnauthorized?: boolean;
       [key: string]: any;
     };
+    connectionTimeout?: number;
+    greetingTimeout?: number;
+    socketTimeout?: number;
   }
 
   interface SendMailOptions {
@@ -29,6 +32,7 @@ declare module 'nodemailer' {
 
   interface Transporter {
     sendMail(mailOptions: SendMailOptions): Promise<SentMessageInfo>;
+    verify(): Promise<boolean>;
   }
 
   function createTransport(options: TransportOptions): Transporter;

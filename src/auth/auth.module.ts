@@ -6,11 +6,13 @@ import { JwtStrategy } from './jwt.strategy';
 import { RefreshJwtStrategy } from './refresh-jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { CompanySignupModule } from './company-signup/company-signup.module';
 
 @Module({
   imports: [
     PrismaModule,
     ConfigModule,
+    CompanySignupModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

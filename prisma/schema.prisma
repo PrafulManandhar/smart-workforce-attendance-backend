@@ -116,6 +116,9 @@ model Company {
 
   earlyCheckInMinutes Int? @default(30)
 
+  // Email verification / signup OTP
+  emailOtp CompanyEmailOtp?
+
   users                    User[]
   employees                EmployeeProfile[]
   shifts                   Shift[]
@@ -453,6 +456,31 @@ model Department {
   status      DepartmentStatus @default(ACTIVE)
 
   shifts Shift[]
+model SignupOtp {
+  id        String   @id @default(cuid())
+  email     String
+  otpHash   String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  payload   Json // Stores { companyName: string, passwordHash: string }
+  createdAt DateTime @default(now())
+
+  @@unique([email])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+model CompanyEmailOtp {
+  id        String   @id @default(cuid())
+  companyId String   @unique
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  email        String?
+  passwordHash String?
+  otpHash      String
+  expiresAt    DateTime
+  attempts     Int      @default(0)
+  verifiedAt   DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -460,4 +488,6 @@ model Department {
   @@unique([companyId, name])
   @@index([companyId])
   @@index([companyId, status])
+  @@index([companyId])
+  @@index([expiresAt])
 }

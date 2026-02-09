@@ -1,4 +1,10 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcryptjs';
 
@@ -32,13 +38,24 @@ import { CompanyOnboardingDto } from './dtos/company-onboarding.dto';
 import { CompanyOptOutDto } from './dtos/company-opt-out.dto';
 import { AppRole } from '../common/enums/role.enum';
 import { AuthService } from '../auth/auth.service';
+import { EmailService } from '../common/email/email.service';
+import { VerifyCompanyEmailOtpDto } from './dtos/verify-company-email-otp.dto';
 
 @Injectable()
 export class CompaniesService {
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
+    private emailService: EmailService,
   ) {}
+
+  private generateOtp(): string {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private async hashOtp(otp: string): Promise<string> {
+    return bcrypt.hash(otp, 10);
+  }
 
   findAll() {
     return this.prisma.company.findMany();
@@ -58,33 +75,148 @@ export class CompaniesService {
       throw new ConflictException('Email already registered');
     }
 
-    // Hash password
+    // Hash password for later use (user creation is not done here anymore)
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
-    // Create company and user in a transaction
-    const result = await this.prisma.$transaction(async (tx) => {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes
+    const rawOtp = this.generateOtp();
+    const otpHash = await this.hashOtp(rawOtp);
+
+    const { company } = await this.prisma.$transaction(async (tx) => {
       // Create company with status=DRAFT
       const company = await tx.company.create({
         data: {
           status: 'DRAFT' as CompanyStatusType,
-        } as any, // Temporary: Remove after regenerating Prisma client with npx prisma generate
+        } as any,
       });
 
-      // Create COMPANY_ADMIN user linked to the company
-      const user = await tx.user.create({
-        data: {
+      // Store OTP for this company (one active OTP per company)
+      await tx.companyEmailOtp.upsert({
+        where: { companyId: company.id },
+        update: {
           email: dto.email,
           passwordHash,
-          role: AppRole.COMPANY_ADMIN as any,
+          otpHash,
+          expiresAt,
+          attempts: 0,
+          verifiedAt: null,
+        },
+        create: {
           companyId: company.id,
-          isActive: true,
+          email: dto.email,
+          passwordHash,
+          otpHash,
+          expiresAt,
         },
       });
+
+      // Persist password hash + other signup payload if needed using SignupOtp or another mechanism.
+      // Existing business logic for user creation and token issuance is now deferred
+      // until after email verification.
+
+      return { company };
+    });
+
+    // Send OTP email (best-effort; failure does not change DB state)
+    await this.emailService.sendCompanySignupOtpEmail({
+      toEmail: dto.email,
+      companyName: null,
+      otp: rawOtp,
+      expiresAt,
+    });
+
+    return {
+      message: 'OTP sent to company email',
+      companyId: company.id,
+    };
+  }
+
+  async verifyEmailOtp(dto: VerifyCompanyEmailOtpDto) {
+    const now = new Date();
+
+    const otpRecord = await this.prisma.companyEmailOtp.findUnique({
+      where: { companyId: dto.companyId },
+    });
+
+    if (!otpRecord) {
+      throw new NotFoundException('OTP not found for this company');
+    }
+
+    if (otpRecord.verifiedAt) {
+      throw new BadRequestException('Company email already verified');
+    }
+
+    if (otpRecord.attempts >= 5) {
+      throw new ForbiddenException('Maximum OTP attempts exceeded');
+    }
+
+    if (otpRecord.expiresAt < now) {
+      await this.prisma.companyEmailOtp.update({
+        where: { companyId: dto.companyId },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new BadRequestException('OTP has expired');
+    }
+
+    const isMatch = await bcrypt.compare(dto.otp, otpRecord.otpHash);
+    if (!isMatch) {
+      await this.prisma.companyEmailOtp.update({
+        where: { companyId: dto.companyId },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new BadRequestException('Invalid OTP');
+    }
+
+    if (!otpRecord.email || !otpRecord.passwordHash) {
+      throw new BadRequestException('Signup data incomplete. Please signup again.');
+    }
+
+    // Store non-null values after validation
+    const email = otpRecord.email;
+    const passwordHash = otpRecord.passwordHash;
+
+    // Verify OTP, create user, activate company, and generate tokens in a transaction
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Mark OTP as verified
+      await tx.companyEmailOtp.update({
+        where: { companyId: dto.companyId },
+        data: {
+          verifiedAt: now,
+          attempts: { increment: 1 },
+        },
+      });
+
+      // Activate company
+      const company = await tx.company.update({
+        where: { id: dto.companyId },
+        data: {
+          status: 'ACTIVE_TRIAL' as CompanyStatusType,
+          onboardingCompletedAt: now,
+        } as any,
+      });
+
+      // Create admin user if it doesn't exist
+      let user = await tx.user.findUnique({
+        where: { email },
+      });
+
+      if (!user) {
+        user = await tx.user.create({
+          data: {
+            email,
+            passwordHash,
+            role: AppRole.COMPANY_ADMIN as any,
+            companyId: dto.companyId,
+            isActive: true,
+          },
+        });
+      }
 
       return { company, user };
     });
 
-    // Generate tokens using AuthService
+    // Generate auth tokens using AuthService
     const tokens = await this.authService.issueTokens({
       id: result.user.id,
       email: result.user.email,
@@ -92,11 +224,20 @@ export class CompaniesService {
       companyId: result.user.companyId ?? null,
     });
 
+    // Fetch company details
+    const companyFull = result.company as unknown as CompanyWithAllFields;
+
     return {
-      ...tokens,
-      role: result.user.role,
-      companyId: result.company.id,
-      userId: result.user.id,
+      message: 'Company email verified successfully',
+      token: tokens.accessToken,
+      company: {
+        id: result.company.id,
+        name: result.company.name,
+        email: result.user.email,
+        username: result.user.email, // Using email as username
+        status: companyFull.status.toLowerCase(),
+        created_at: result.company.createdAt,
+      },
     };
   }
 
