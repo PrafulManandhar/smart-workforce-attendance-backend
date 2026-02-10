@@ -16,6 +16,7 @@ export class ShiftsService {
   async create(companyId: string, createShiftDto: CreateShiftDto) {
     const {
       employeeId,
+      departmentId,
       workLocationId,
       startAt,
       endAt,
@@ -53,6 +54,22 @@ export class ShiftsService {
 
     if (!employee) {
       throw new NotFoundException('Employee not found or does not belong to company');
+    }
+
+    // Validate department (required, same company)
+    if (!departmentId) {
+      throw new BadRequestException('Department is required for creating a shift');
+    }
+
+    const department = await this.prisma.department.findFirst({
+      where: {
+        id: departmentId,
+        companyId,
+      },
+    });
+
+    if (!department) {
+      throw new BadRequestException('Department is required for creating a shift');
     }
 
     // Validate work location if provided
@@ -110,6 +127,7 @@ export class ShiftsService {
       data: {
         employeeId,
         companyId,
+        departmentId,
         workLocationId: workLocationId || null,
         startAt,
         endAt,
@@ -206,6 +224,10 @@ export class ShiftsService {
       workLocationId: updateShiftDto.workLocationId !== undefined 
         ? (updateShiftDto.workLocationId || null)
         : existingShift.workLocationId,
+      departmentId:
+        updateShiftDto.departmentId !== undefined
+          ? (updateShiftDto.departmentId || null)
+          : (existingShift as any).departmentId ?? null,
       startAt: updateShiftDto.startAt ?? existingShift.startAt,
       endAt: updateShiftDto.endAt ?? existingShift.endAt,
       type: updateShiftDto.type ?? existingShift.type,
@@ -246,6 +268,24 @@ export class ShiftsService {
       throw new NotFoundException('Employee not found or does not belong to company');
     }
 
+    // If departmentId is being changed, validate new department in same company
+    if (updateShiftDto.departmentId !== undefined) {
+      if (!mergedData.departmentId) {
+        throw new BadRequestException('Department is required for creating a shift');
+      }
+
+      const department = await this.prisma.department.findFirst({
+        where: {
+          id: mergedData.departmentId,
+          companyId,
+        },
+      });
+
+      if (!department) {
+        throw new BadRequestException('Department is required for creating a shift');
+      }
+    }
+
     // Validate work location if provided
     if (mergedData.workLocationId) {
       const workLocation = await this.prisma.workLocation.findFirst({
@@ -284,6 +324,7 @@ export class ShiftsService {
       data: {
         employeeId: mergedData.employeeId,
         workLocationId: mergedData.workLocationId,
+        departmentId: mergedData.departmentId,
         startAt: mergedData.startAt,
         endAt: mergedData.endAt,
         type: mergedData.type,
@@ -324,8 +365,11 @@ export class ShiftsService {
     }
 
     // Validate all shifts first before creating any
-    // Collect all employee IDs and work location IDs for batch validation
+    // Collect all employee IDs, department IDs, and work location IDs for batch validation
     const employeeIds = [...new Set(shifts.map((s) => s.employeeId))];
+    const departmentIds = [
+      ...new Set(shifts.map((s) => s.departmentId).filter((id): id is string => !!id)),
+    ];
     const workLocationIds = [
       ...new Set(shifts.map((s) => s.workLocationId).filter((id): id is string => !!id)),
     ];
@@ -345,6 +389,26 @@ export class ShiftsService {
           `Employee ${shift.employeeId} not found or does not belong to company`,
         );
       }
+    }
+
+    // Batch validate departments (required)
+    if (departmentIds.length > 0) {
+      const departments = await this.prisma.department.findMany({
+        where: {
+          id: { in: departmentIds },
+          companyId,
+        },
+      });
+
+      const validDepartmentIds = new Set(departments.map((d) => d.id));
+      for (const shift of shifts) {
+        if (!shift.departmentId || !validDepartmentIds.has(shift.departmentId)) {
+          throw new BadRequestException('Department is required for creating a shift');
+        }
+      }
+    } else {
+      // No valid departmentIds collected => at least one shift missing department
+      throw new BadRequestException('Department is required for creating a shift');
     }
 
     // Batch validate work locations if provided
@@ -446,6 +510,7 @@ export class ShiftsService {
             employeeId: shift.employeeId,
             companyId,
             workLocationId: shift.workLocationId || null,
+            departmentId: shift.departmentId,
             startAt: shift.startAt,
             endAt: shift.endAt,
             type: shift.type ?? ShiftType.OTHER,
