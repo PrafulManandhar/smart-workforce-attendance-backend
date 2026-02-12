@@ -7,6 +7,14 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+    // ✅ ENABLE CORS (add this block)
+    app.enableCors({
+      origin: ['http://localhost:3001'], // your Next.js frontend
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+      credentials: true, // keep true if you use cookies; otherwise can be false
+    });
+
   // Prisma shutdown hooks
   const prismaService = app.get(PrismaService);
   await prismaService.enableShutdownHooks(app);
