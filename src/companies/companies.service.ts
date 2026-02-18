@@ -21,11 +21,11 @@ type CompanyWithAllFields = {
   timezone: string;
   isActive: boolean;
   status: CompanyStatusType;
+  isOnboardingComplete: boolean;
   trialStartAt: Date | null;
   trialEndAt: Date | null;
   employeeLimit: number | null;
   estimatedEmployeeRange: string | null;
-  currentRosteringMethod: string | null;
   phoneNumber: string | null;
   jobTitle: string | null;
   onboardingCompletedAt: Date | null;
@@ -255,13 +255,13 @@ export class CompaniesService {
     const now = new Date();
     const trialEndAt = new Date(now.getTime() + 21 * 24 * 60 * 60 * 1000); // 21 days in milliseconds
 
-    // Update company with onboarding data and activate trial
+    // Update company with onboarding data and activate trial.
+    // Mark onboarding as complete only after successful update.
     const updatedCompany = await this.prisma.company.update({
       where: { id: companyId },
       data: {
         name: dto.companyName,
         estimatedEmployeeRange: dto.estimatedEmployeeRange,
-        currentRosteringMethod: dto.currentRosteringMethod,
         phoneNumber: dto.phoneNumber,
         jobTitle: dto.jobTitle,
         status: 'ACTIVE_TRIAL' as CompanyStatusType,
@@ -269,6 +269,8 @@ export class CompaniesService {
         trialEndAt,
         employeeLimit: 10,
         onboardingCompletedAt: now,
+        // This flag should only be set to true from the onboarding flow.
+        isOnboardingComplete: true,
       } as any, // Temporary: Remove after regenerating Prisma client with npx prisma generate
     });
 
@@ -278,6 +280,26 @@ export class CompaniesService {
   async getMyCompany(companyId: string) {
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        timezone: true,
+        isActive: true,
+        status: true,
+        trialStartAt: true,
+        trialEndAt: true,
+        employeeLimit: true,
+        onboardingCompletedAt: true,
+        // New onboarding completion flag. The Prisma Client types may not yet
+        // include this field until you run `npx prisma generate`, so we
+        // deliberately allow it here and map it at the response level.
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        isOnboardingComplete: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     if (!company) {
@@ -292,6 +314,7 @@ export class CompaniesService {
       code: company.code,
       timezone: company.timezone,
       status: companyFull.status,
+       isOnboardingComplete: companyFull.isOnboardingComplete ?? false,
       trialStartAt: companyFull.trialStartAt,
       trialEndAt: companyFull.trialEndAt,
       employeeLimit: companyFull.employeeLimit,

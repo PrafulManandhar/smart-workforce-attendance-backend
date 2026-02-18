@@ -101,12 +101,14 @@ model Company {
 
   status CompanyStatus @default(DRAFT)
 
+  // New explicit onboarding completion flag
+  isOnboardingComplete Boolean @default(false)
+
   trialStartAt  DateTime?
   trialEndAt    DateTime?
   employeeLimit Int?
 
   estimatedEmployeeRange String?
-  currentRosteringMethod String?
   phoneNumber            String?
   jobTitle               String?
   onboardingCompletedAt  DateTime?
@@ -448,14 +450,22 @@ model EmployeeUnavailabilityException {
 }
 
 model Department {
-  id          String          @id @default(cuid())
+  id          String           @id @default(cuid())
   companyId   String
-  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name        String
   description String?
   status      DepartmentStatus @default(ACTIVE)
 
-  shifts Shift[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  shifts      Shift[]
+
+  @@unique([companyId, name])
+}
+
+
 model SignupOtp {
   id        String   @id @default(cuid())
   email     String
@@ -481,13 +491,13 @@ model CompanyEmailOtp {
   expiresAt    DateTime
   attempts     Int      @default(0)
   verifiedAt   DateTime?
+  isOnboardingComplete Boolean @default(false)
+
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([companyId, name])
-  @@index([companyId])
-  @@index([companyId, status])
+  // Keep indexes minimal and valid – only reference existing fields.
   @@index([companyId])
   @@index([expiresAt])
 }

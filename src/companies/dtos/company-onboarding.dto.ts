@@ -12,10 +12,6 @@ export class CompanyOnboardingDto {
   @IsNotEmpty()
   estimatedEmployeeRange!: string;
 
-  @ApiProperty({ example: 'Excel Spreadsheets', description: 'Current method used for rostering' })
-  @IsString()
-  @IsNotEmpty()
-  currentRosteringMethod!: string;
 
   @ApiProperty({ example: '+1234567890' })
   @IsString()
