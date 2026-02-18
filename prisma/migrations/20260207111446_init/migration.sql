@@ -34,9 +34,6 @@ CREATE TYPE "UnavailabilityRuleStatus" AS ENUM ('ACTIVE', 'INACTIVE');
 -- CreateEnum
 CREATE TYPE "UnavailabilityExceptionType" AS ENUM ('ADD', 'REMOVE', 'REPLACE');
 
--- CreateEnum
-CREATE TYPE "DepartmentStatus" AS ENUM ('ACTIVE', 'INACTIVE');
-
 -- CreateTable
 CREATE TABLE "Company" (
     "id" TEXT NOT NULL,
@@ -150,7 +147,6 @@ CREATE TABLE "Shift" (
     "employeeId" TEXT NOT NULL,
     "companyId" TEXT NOT NULL,
     "workLocationId" TEXT,
-    "departmentId" TEXT,
     "startAt" TIMESTAMP(3) NOT NULL,
     "endAt" TIMESTAMP(3) NOT NULL,
     "type" "ShiftType" NOT NULL,
@@ -288,19 +284,6 @@ CREATE TABLE "EmployeeUnavailabilityException" (
 );
 
 -- CreateTable
-CREATE TABLE "Department" (
-    "id" TEXT NOT NULL,
-    "companyId" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "description" TEXT,
-    "status" "DepartmentStatus" NOT NULL DEFAULT 'ACTIVE',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "Department_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "SignupOtp" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
@@ -411,9 +394,6 @@ CREATE INDEX "EmployeeUnavailabilityException_employeeId_dateLocal_idx" ON "Empl
 CREATE INDEX "EmployeeUnavailabilityException_companyId_dateLocal_idx" ON "EmployeeUnavailabilityException"("companyId", "dateLocal");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Department_companyId_name_key" ON "Department"("companyId", "name");
-
--- CreateIndex
 CREATE INDEX "SignupOtp_email_idx" ON "SignupOtp"("email");
 
 -- CreateIndex
@@ -468,9 +448,6 @@ ALTER TABLE "Shift" ADD CONSTRAINT "Shift_companyId_fkey" FOREIGN KEY ("companyI
 ALTER TABLE "Shift" ADD CONSTRAINT "Shift_workLocationId_fkey" FOREIGN KEY ("workLocationId") REFERENCES "WorkLocation"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Shift" ADD CONSTRAINT "Shift_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "Department"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "AttendanceSession" ADD CONSTRAINT "AttendanceSession_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "EmployeeProfile"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -520,9 +497,6 @@ ALTER TABLE "EmployeeUnavailabilityException" ADD CONSTRAINT "EmployeeUnavailabi
 
 -- AddForeignKey
 ALTER TABLE "EmployeeUnavailabilityException" ADD CONSTRAINT "EmployeeUnavailabilityException_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Department" ADD CONSTRAINT "Department_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "CompanyEmailOtp" ADD CONSTRAINT "CompanyEmailOtp_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES "Company"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

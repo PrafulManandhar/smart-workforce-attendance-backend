@@ -109,7 +109,6 @@ model Company {
   employeeLimit Int?
 
   estimatedEmployeeRange String?
-  currentRosteringMethod String?
   phoneNumber            String?
   jobTitle               String?
   onboardingCompletedAt  DateTime?
@@ -492,6 +491,8 @@ model CompanyEmailOtp {
   expiresAt    DateTime
   attempts     Int      @default(0)
   verifiedAt   DateTime?
+  isOnboardingComplete Boolean @default(false)
+
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

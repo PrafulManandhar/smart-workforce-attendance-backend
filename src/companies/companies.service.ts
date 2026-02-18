@@ -26,7 +26,6 @@ type CompanyWithAllFields = {
   trialEndAt: Date | null;
   employeeLimit: number | null;
   estimatedEmployeeRange: string | null;
-  currentRosteringMethod: string | null;
   phoneNumber: string | null;
   jobTitle: string | null;
   onboardingCompletedAt: Date | null;
@@ -263,7 +262,6 @@ export class CompaniesService {
       data: {
         name: dto.companyName,
         estimatedEmployeeRange: dto.estimatedEmployeeRange,
-        currentRosteringMethod: dto.currentRosteringMethod,
         phoneNumber: dto.phoneNumber,
         jobTitle: dto.jobTitle,
         status: 'ACTIVE_TRIAL' as CompanyStatusType,
